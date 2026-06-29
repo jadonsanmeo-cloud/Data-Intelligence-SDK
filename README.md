@@ -30,10 +30,11 @@ Supporting layers:
 
 - `Intent` is a controlled string selected from `SUPPORTED_INTENTS`, not a
   rich object. The spec carries the richer objective and constraints.
-- `EngineOutput` is raw engine output plus references to artifacts/logs. It
-  does not claim to know the final execution steps or method calls.
-- `EvidenceBundle` is where steps, method calls, observations, artifact refs,
-  and log refs are synthesized for audit and final response generation.
+- `EngineOutput` contains raw engine output plus `EngineTrace`.
+- Engines receive an `EngineRunContext` and should record each step and Method
+  Hub call through that context instead of inventing their own trace format.
+- `EvidenceBundle` uses the engine trace, observations, artifact refs, and log
+  refs for audit and final response generation.
 - `SessionContext` is separate from `UserContext`: session context is short
   lived conversation/task state, while user context is longer-lived preference
   and history.

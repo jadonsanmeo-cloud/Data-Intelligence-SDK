@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from data_intelligence.core.types import DataHubContext, EngineOutput, ExecutionSpec, UserContext
+from data_intelligence.runtime.run_context import EngineRunContext
 
 
 class Engine(Protocol):
@@ -21,6 +22,7 @@ class Engine(Protocol):
         self,
         spec: ExecutionSpec,
         datahub: DataHubContext,
+        context: EngineRunContext,
         user_context: UserContext | None = None,
     ) -> EngineOutput:
-        """Execute the spec and return raw engine output."""
+        """Execute the spec and return output with structured trace."""

@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 Intent = Literal["sql", "python", "rag", "workflow", "custom", "unknown"]
 SUPPORTED_INTENTS: tuple[Intent, ...] = ("sql", "python", "rag", "workflow", "custom", "unknown")
+TraceStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 
 
 @dataclass(slots=True)
@@ -64,17 +65,48 @@ class ExecutionSpec:
 
 
 @dataclass(slots=True)
-class EngineOutput:
-    """Raw result returned by an engine.
+class EngineStep:
+    """A structured step recorded by an engine during execution."""
 
-    Trace synthesis is intentionally outside this type. Steps and method calls
-    should be reconstructed from runtime events, sandbox logs, and artifacts.
-    """
+    name: str
+    status: TraceStatus = "completed"
+    description: str | None = None
+    inputs: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
+    artifact_refs: list[str] = field(default_factory=list)
+    log_refs: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class MethodCall:
+    """A structured runtime or Method Hub call made by an engine."""
+
+    method_name: str
+    status: TraceStatus = "completed"
+    inputs: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
+    artifact_refs: list[str] = field(default_factory=list)
+    log_refs: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class EngineTrace:
+    """Structured execution trace produced while an engine runs."""
+
+    steps: list[EngineStep] = field(default_factory=list)
+    method_calls: list[MethodCall] = field(default_factory=list)
+    artifact_refs: list[str] = field(default_factory=list)
+    log_refs: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class EngineOutput:
+    """Raw engine result plus the structured trace recorded during execution."""
 
     engine_name: str
     result: Any = None
-    artifact_refs: list[str] = field(default_factory=list)
-    log_refs: list[str] = field(default_factory=list)
+    trace: EngineTrace = field(default_factory=EngineTrace)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -83,8 +115,8 @@ class EvidenceBundle:
 
     sources: list[str] = field(default_factory=list)
     observations: list[dict[str, Any]] = field(default_factory=list)
-    steps: list[dict[str, Any]] = field(default_factory=list)
-    method_calls: list[dict[str, Any]] = field(default_factory=list)
+    steps: list[EngineStep] = field(default_factory=list)
+    method_calls: list[MethodCall] = field(default_factory=list)
     artifact_refs: list[str] = field(default_factory=list)
     log_refs: list[str] = field(default_factory=list)
 

@@ -2,26 +2,34 @@
 
 from data_intelligence.core.types import (
     DataHubContext,
+    EngineStep,
     EngineOutput,
+    EngineTrace,
     EvidenceBundle,
     ExecutionSpec,
     FinalResponse,
     Intent,
+    MethodCall,
     SUPPORTED_INTENTS,
     SessionContext,
+    TraceStatus,
     UserContext,
     UserQuery,
 )
 
 __all__ = [
     "DataHubContext",
+    "EngineStep",
     "EngineOutput",
+    "EngineTrace",
     "EvidenceBundle",
     "ExecutionSpec",
     "FinalResponse",
     "Intent",
+    "MethodCall",
     "SUPPORTED_INTENTS",
     "SessionContext",
+    "TraceStatus",
     "UserContext",
     "UserQuery",
 ]

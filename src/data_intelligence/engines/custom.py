@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from data_intelligence.core.types import DataHubContext, EngineOutput, ExecutionSpec, UserContext
+from data_intelligence.runtime.run_context import EngineRunContext
 
 
 class CustomEngine:
@@ -17,6 +18,7 @@ class CustomEngine:
         self,
         spec: ExecutionSpec,
         datahub: DataHubContext,
+        context: EngineRunContext,
         user_context: UserContext | None = None,
     ) -> EngineOutput:
         raise NotImplementedError("Custom execution is not part of the base scaffold.")

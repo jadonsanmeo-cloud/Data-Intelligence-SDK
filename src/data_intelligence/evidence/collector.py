@@ -8,7 +8,7 @@ from data_intelligence.core.types import EngineOutput, EvidenceBundle, Execution
 
 
 class EvidenceCollector(Protocol):
-    """Collects evidence, traces, method calls, and artifacts from execution."""
+    """Builds evidence from engine trace, observations, logs, and artifacts."""
 
     def collect(self, spec: ExecutionSpec, output: EngineOutput) -> EvidenceBundle:
         """Return evidence for synthesis and audit."""
