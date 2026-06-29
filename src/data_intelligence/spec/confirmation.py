@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from data_intelligence.core.types import ExecutionSpec, UserContext
+from data_intelligence.core.types import ExecutionSpec, SessionContext, UserContext
 
 
 class SpecConfirmation(Protocol):
@@ -13,6 +13,7 @@ class SpecConfirmation(Protocol):
     def confirm(
         self,
         spec: ExecutionSpec,
+        session_context: SessionContext | None = None,
         user_context: UserContext | None = None,
     ) -> ExecutionSpec:
         """Return a confirmed spec."""

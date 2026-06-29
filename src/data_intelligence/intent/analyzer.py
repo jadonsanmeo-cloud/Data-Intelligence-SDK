@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from data_intelligence.core.types import DataHubContext, Intent, UserContext, UserQuery
+from data_intelligence.core.types import DataHubContext, Intent, SessionContext, UserContext, UserQuery
 
 
 class IntentAnalyzer(Protocol):
@@ -14,6 +14,7 @@ class IntentAnalyzer(Protocol):
         self,
         query: UserQuery,
         datahub: DataHubContext,
+        session_context: SessionContext | None = None,
         user_context: UserContext | None = None,
     ) -> Intent:
-        """Return the interpreted user intent."""
+        """Return one intent value from the supported intent list."""

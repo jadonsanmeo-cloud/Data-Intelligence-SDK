@@ -11,7 +11,7 @@ class PythonEngine:
     name = "python"
 
     def can_handle(self, spec: ExecutionSpec) -> bool:
-        return spec.engine_hint == self.name or spec.intent.task_type == "python"
+        return spec.engine_hint == self.name or spec.intent == self.name
 
     def run(
         self,

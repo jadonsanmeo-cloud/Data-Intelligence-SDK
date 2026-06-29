@@ -8,7 +8,10 @@ early.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+Intent = Literal["sql", "python", "rag", "workflow", "custom", "unknown"]
+SUPPORTED_INTENTS: tuple[Intent, ...] = ("sql", "python", "rag", "workflow", "custom", "unknown")
 
 
 @dataclass(slots=True)
@@ -32,7 +35,7 @@ class DataHubContext:
 
 @dataclass(slots=True)
 class UserContext:
-    """User-level memory and preferences across tasks."""
+    """Long-lived user memory and preferences across tasks."""
 
     user_id: str | None = None
     preferences: dict[str, Any] = field(default_factory=dict)
@@ -40,13 +43,12 @@ class UserContext:
 
 
 @dataclass(slots=True)
-class Intent:
-    """Interpreted user intent before execution planning."""
+class SessionContext:
+    """Short-lived context for the current conversation or task session."""
 
-    task_type: str
-    summary: str
-    confidence: float | None = None
-    attributes: dict[str, Any] = field(default_factory=dict)
+    session_id: str | None = None
+    turns: list[dict[str, Any]] = field(default_factory=list)
+    state: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -63,24 +65,28 @@ class ExecutionSpec:
 
 @dataclass(slots=True)
 class EngineOutput:
-    """Raw result returned by an engine."""
+    """Raw result returned by an engine.
+
+    Trace synthesis is intentionally outside this type. Steps and method calls
+    should be reconstructed from runtime events, sandbox logs, and artifacts.
+    """
 
     engine_name: str
     result: Any = None
-    steps: list[dict[str, Any]] = field(default_factory=list)
-    method_calls: list[dict[str, Any]] = field(default_factory=list)
-    artifacts: list[str] = field(default_factory=list)
+    artifact_refs: list[str] = field(default_factory=list)
+    log_refs: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class EvidenceBundle:
-    """Evidence and trace material collected around an engine run."""
+    """Evidence and trace material synthesized around an engine run."""
 
     sources: list[str] = field(default_factory=list)
     observations: list[dict[str, Any]] = field(default_factory=list)
     steps: list[dict[str, Any]] = field(default_factory=list)
     method_calls: list[dict[str, Any]] = field(default_factory=list)
-    artifacts: list[str] = field(default_factory=list)
+    artifact_refs: list[str] = field(default_factory=list)
+    log_refs: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

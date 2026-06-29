@@ -11,7 +11,7 @@ class SqlEngine:
     name = "sql"
 
     def can_handle(self, spec: ExecutionSpec) -> bool:
-        return spec.engine_hint == self.name or spec.intent.task_type == "sql"
+        return spec.engine_hint == self.name or spec.intent == self.name
 
     def run(
         self,

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from data_intelligence.core.types import DataHubContext, FinalResponse, UserContext, UserQuery
+from data_intelligence.core.types import (
+    DataHubContext,
+    FinalResponse,
+    SessionContext,
+    UserContext,
+    UserQuery,
+)
 
 
 class DataIntelligencePipeline:
@@ -33,6 +39,7 @@ class DataIntelligencePipeline:
         self,
         query: UserQuery,
         datahub: DataHubContext,
+        session_context: SessionContext | None = None,
         user_context: UserContext | None = None,
     ) -> FinalResponse:
         """Run the full data intelligence flow.

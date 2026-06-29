@@ -32,4 +32,8 @@ class InMemoryEngineRegistry:
         if spec.engine_hint and spec.engine_hint in self._engines:
             return self._engines[spec.engine_hint]
 
+        for engine in self._engines.values():
+            if engine.can_handle(spec):
+                return engine
+
         raise EngineNotFoundError(f"No engine registered for spec objective: {spec.objective}")

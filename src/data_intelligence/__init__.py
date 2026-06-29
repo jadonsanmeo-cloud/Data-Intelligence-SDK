@@ -7,6 +7,8 @@ from data_intelligence.core.types import (
     ExecutionSpec,
     FinalResponse,
     Intent,
+    SUPPORTED_INTENTS,
+    SessionContext,
     UserContext,
     UserQuery,
 )
@@ -18,6 +20,8 @@ __all__ = [
     "ExecutionSpec",
     "FinalResponse",
     "Intent",
+    "SUPPORTED_INTENTS",
+    "SessionContext",
     "UserContext",
     "UserQuery",
 ]
