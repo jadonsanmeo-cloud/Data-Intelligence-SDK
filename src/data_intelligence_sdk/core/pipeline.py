@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from data_intelligence_sdk.core.types import (
-    DataHubContext,
+    DataCorpusPackage,
     FinalResponse,
     SessionContext,
     UserContext,
     UserQuery,
 )
+from data_intelligence_sdk.runtime.engine_runtime import EngineRuntimeContext
+from data_intelligence_sdk.runtime.method_hub import MethodHub
+from data_intelligence_sdk.runtime.run_context import EngineRunContext
 
 
 class DataIntelligencePipeline:
@@ -27,6 +30,13 @@ class DataIntelligencePipeline:
         engine_registry: object,
         evidence_collector: object,
         synthesizer: object,
+        method_hub: object | None = None,
+        interface_registry: object | None = None,
+        interface_builder: object | None = None,
+        sandbox_executor: object | None = None,
+        artifact_store: object | None = None,
+        log_store: object | None = None,
+        resource_manager: object | None = None,
     ) -> None:
         self.intent_analyzer = intent_analyzer
         self.spec_builder = spec_builder
@@ -34,18 +44,43 @@ class DataIntelligencePipeline:
         self.engine_registry = engine_registry
         self.evidence_collector = evidence_collector
         self.synthesizer = synthesizer
+        self.method_hub = method_hub
+        self.interface_registry = interface_registry
+        self.interface_builder = interface_builder
+        self.sandbox_executor = sandbox_executor
+        self.artifact_store = artifact_store
+        self.log_store = log_store
+        self.resource_manager = resource_manager
 
     def run(
         self,
         query: UserQuery,
-        datahub: DataHubContext,
+        corpus_package: DataCorpusPackage,
         session_context: SessionContext | None = None,
         user_context: UserContext | None = None,
     ) -> FinalResponse:
-        """Run the full data intelligence flow.
+        """Run the full data intelligence flow."""
 
-        This method is intentionally not implemented yet. The package currently
-        defines architecture boundaries, not execution behavior.
-        """
-
-        raise NotImplementedError("Pipeline execution will be implemented after the base contracts settle.")
+        intent = self.intent_analyzer.analyze(
+            query, corpus_package, session_context, user_context
+        )
+        spec = self.spec_builder.build(
+            query, intent, corpus_package, session_context, user_context
+        )
+        confirmed_spec = self.spec_confirmation.confirm(
+            spec, session_context, user_context
+        )
+        engine = self.engine_registry.select(confirmed_spec)
+        runtime = EngineRuntimeContext(
+            run_context=EngineRunContext(),
+            method_hub=self.method_hub or MethodHub(),
+            interface_registry=self.interface_registry,
+            interface_builder=self.interface_builder,
+            sandbox_executor=self.sandbox_executor,
+            artifact_store=self.artifact_store,
+            log_store=self.log_store,
+            resource_manager=self.resource_manager,
+        )
+        output = engine.run(confirmed_spec, corpus_package, runtime, user_context)
+        evidence = self.evidence_collector.collect(confirmed_spec, output)
+        return self.synthesizer.synthesize(confirmed_spec, output, evidence)

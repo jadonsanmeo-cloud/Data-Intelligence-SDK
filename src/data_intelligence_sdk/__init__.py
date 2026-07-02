@@ -1,35 +1,53 @@
 """Base package for the Data Intelligence orchestration system."""
 
 from data_intelligence_sdk.core.types import (
+    CapabilityRequirement,
+    DataCorpusPackage,
     DataHubContext,
-    EngineStep,
     EngineOutput,
+    EngineStep,
     EngineTrace,
     EvidenceBundle,
     ExecutionSpec,
     FinalResponse,
     Intent,
+    InterfaceDefinition,
+    InterfaceSource,
     MethodCall,
     SUPPORTED_INTENTS,
     SessionContext,
     TraceStatus,
+    TrustLevel,
     UserContext,
     UserQuery,
 )
+from data_intelligence_sdk.defaults import (
+    create_default_pipeline,
+    create_default_pipeline_from_openrouter,
+)
+from data_intelligence_sdk.engines import GeneralPurposeEngine
 
 __all__ = [
+    "CapabilityRequirement",
+    "DataCorpusPackage",
     "DataHubContext",
-    "EngineStep",
     "EngineOutput",
+    "EngineStep",
     "EngineTrace",
     "EvidenceBundle",
     "ExecutionSpec",
     "FinalResponse",
+    "GeneralPurposeEngine",
     "Intent",
+    "InterfaceDefinition",
+    "InterfaceSource",
     "MethodCall",
     "SUPPORTED_INTENTS",
     "SessionContext",
     "TraceStatus",
+    "TrustLevel",
     "UserContext",
     "UserQuery",
+    "create_default_pipeline",
+    "create_default_pipeline_from_openrouter",
 ]

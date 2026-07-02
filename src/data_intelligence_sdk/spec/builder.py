@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from data_intelligence_sdk.core.types import (
-    DataHubContext,
+    DataCorpusPackage,
     ExecutionSpec,
     Intent,
     SessionContext,
@@ -21,7 +21,7 @@ class SpecBuilder(Protocol):
         self,
         query: UserQuery,
         intent: Intent,
-        datahub: DataHubContext,
+        corpus_package: DataCorpusPackage,
         session_context: SessionContext | None = None,
         user_context: UserContext | None = None,
     ) -> ExecutionSpec:

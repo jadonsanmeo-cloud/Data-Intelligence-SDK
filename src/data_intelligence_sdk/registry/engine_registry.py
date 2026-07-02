@@ -20,10 +20,14 @@ class EngineRegistry(Protocol):
 
 
 class InMemoryEngineRegistry:
-    """Minimal registry scaffold for future concrete behavior."""
+    """In-memory engine registry with optional fallback selection."""
 
-    def __init__(self) -> None:
+    def __init__(self, fallback_engine: Engine | None = None) -> None:
         self._engines: dict[str, Engine] = {}
+        self._fallback_engine = fallback_engine
+
+    def set_fallback(self, engine: Engine | None) -> None:
+        self._fallback_engine = engine
 
     def register(self, engine: Engine) -> None:
         self._engines[engine.name] = engine
@@ -36,4 +40,9 @@ class InMemoryEngineRegistry:
             if engine.can_handle(spec):
                 return engine
 
-        raise EngineNotFoundError(f"No engine registered for spec objective: {spec.objective}")
+        if self._fallback_engine is not None:
+            return self._fallback_engine
+
+        raise EngineNotFoundError(
+            f"No engine registered for spec objective: {spec.objective}"
+        )

@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from data_intelligence_sdk.core.types import DataHubContext, EngineOutput, ExecutionSpec, UserContext
-from data_intelligence_sdk.runtime.run_context import EngineRunContext
+from data_intelligence_sdk.core.types import (
+    DataCorpusPackage,
+    EngineOutput,
+    ExecutionSpec,
+    UserContext,
+)
+from data_intelligence_sdk.runtime.engine_runtime import EngineRuntimeContext
 
 
 class Engine(Protocol):
@@ -21,8 +26,8 @@ class Engine(Protocol):
     def run(
         self,
         spec: ExecutionSpec,
-        datahub: DataHubContext,
-        context: EngineRunContext,
+        corpus_package: DataCorpusPackage,
+        runtime: EngineRuntimeContext,
         user_context: UserContext | None = None,
     ) -> EngineOutput:
         """Execute the spec and return output with structured trace."""
