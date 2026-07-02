@@ -11,8 +11,23 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 Intent = Literal["sql", "python", "rag", "workflow", "custom", "unknown"]
-SUPPORTED_INTENTS: tuple[Intent, ...] = ("sql", "python", "rag", "workflow", "custom", "unknown")
+SUPPORTED_INTENTS: tuple[Intent, ...] = (
+    "sql",
+    "python",
+    "rag",
+    "workflow",
+    "custom",
+    "unknown",
+)
 TraceStatus = Literal["pending", "running", "completed", "failed", "skipped"]
+TrustLevel = Literal[
+    "builtin",
+    "user_approved",
+    "generated_unvalidated",
+    "generated_validated",
+    "blocked",
+]
+InterfaceSource = Literal["builtin", "user", "generated"]
 
 
 @dataclass(slots=True)
@@ -26,12 +41,15 @@ class UserQuery:
 
 
 @dataclass(slots=True)
-class DataHubContext:
+class DataCorpusPackage:
     """Data, metadata, and semantic context available to the system."""
 
     sources: list[str] = field(default_factory=list)
     schemas: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+DataHubContext = DataCorpusPackage
 
 
 @dataclass(slots=True)
@@ -53,12 +71,39 @@ class SessionContext:
 
 
 @dataclass(slots=True)
+class CapabilityRequirement:
+    """A capability the selected engine/runtime must resolve."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    constraints: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class InterfaceDefinition:
+    """Definition of a reusable or generated interface."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    implementation_ref: str | None = None
+    source: InterfaceSource = "generated"
+    trust_level: TrustLevel = "generated_unvalidated"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class ExecutionSpec:
     """Draft or confirmed execution request for engine selection."""
 
     intent: Intent
     objective: str
     data_requirements: list[str] = field(default_factory=list)
+    capability_requirements: list[CapabilityRequirement] = field(default_factory=list)
     constraints: dict[str, Any] = field(default_factory=dict)
     confirmed: bool = False
     engine_hint: str | None = None
@@ -117,6 +162,8 @@ class EvidenceBundle:
     observations: list[dict[str, Any]] = field(default_factory=list)
     steps: list[EngineStep] = field(default_factory=list)
     method_calls: list[MethodCall] = field(default_factory=list)
+    interface_defs: list[InterfaceDefinition] = field(default_factory=list)
+    sandbox_results: list[dict[str, Any]] = field(default_factory=list)
     artifact_refs: list[str] = field(default_factory=list)
     log_refs: list[str] = field(default_factory=list)
 

@@ -14,4 +14,9 @@ build/
 dist/
 *.egg-info/
 data.zip
-tests/
+
+### Shiny ###
+docs/superpowers/
+.claude/
+.env
+#############

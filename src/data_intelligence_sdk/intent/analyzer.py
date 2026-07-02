@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from data_intelligence_sdk.core.types import DataHubContext, Intent, SessionContext, UserContext, UserQuery
+from data_intelligence_sdk.core.types import (
+    DataCorpusPackage,
+    Intent,
+    SessionContext,
+    UserContext,
+    UserQuery,
+)
 
 
 class IntentAnalyzer(Protocol):
@@ -13,7 +19,7 @@ class IntentAnalyzer(Protocol):
     def analyze(
         self,
         query: UserQuery,
-        datahub: DataHubContext,
+        corpus_package: DataCorpusPackage,
         session_context: SessionContext | None = None,
         user_context: UserContext | None = None,
     ) -> Intent:
