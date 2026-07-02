@@ -1,6 +1,6 @@
 """Static DataHub catalog for already prepared data."""
 
-from data_intelligence.datahub.catalog import (
+from data_intelligence_sdk.datahub.catalog import (
     ColumnSchema,
     DataHub,
     DataHubFile,

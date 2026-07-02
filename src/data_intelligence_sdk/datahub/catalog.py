@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-from data_intelligence.core.types import DataHubContext
+from data_intelligence_sdk.core.types import DataHubContext
 
 FileType = Literal["csv", "pdf"]
 
