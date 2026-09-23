@@ -207,6 +207,7 @@ def default_pipeline_factory(
         logger=logger,
         config_manager=config_manager,
         execution_context=execution_context,
+        execution_files=execution_files,
         workspace_id=workspace_id,
         user_id=user_id,
         use_llm_spec_builder=True,

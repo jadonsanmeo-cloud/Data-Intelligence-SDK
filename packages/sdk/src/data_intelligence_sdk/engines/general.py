@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import os
 from builtins import BaseExceptionGroup
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from deepagents import (
     GeneralPurposeSubagentProfile,
@@ -82,7 +82,7 @@ def _recover_tool_errors(
 ) -> Any:
     try:
         return handler(request)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - normalize all tool failures
         primary_error = _primary_tool_error(exc)
         tool_call = request.tool_call
         payload = {
@@ -474,17 +474,30 @@ class GeneralPurposeEngine:
         runtime: EngineRuntimeContext,
         query: UserQuery,
     ) -> str:
+        execution_file_instructions = _execution_file_instructions(runtime)
         method_hub_enabled = runtime.has_mcp_tools
         method_hub_instructions = (
-            "Method Hub is enabled. Call the matching Method Hub tool directly. "
-            "Use execute_python only for local file inspection, calculations, "
-            "or transformations that do not require Method Hub access. Never "
-            "attempt HTTP or Method Hub access from generated code. For question answering "
-            "over a specific document, prefer `corpus_retrieve_context` and "
-            "answer from its returned chunks. For question answering across the "
-            "indexed corpus, prefer `corpus_retrieve_context` and answer from "
-            "its returned chunks. Use retrieval tools instead of previewing an "
-            "entire dataset when only relevant context is needed.\n\n"
+            (
+                "Method Hub is enabled for indexed workspace data. Direct input "
+                "files listed above take precedence for file questions. Use "
+                "retrieval only for selected indexed documents without a direct "
+                "input. Never attempt HTTP or Method Hub access from generated "
+                "code.\n\n"
+                if execution_file_instructions
+                else (
+                    "Method Hub is enabled. Call the matching Method Hub tool "
+                    "directly. Use execute_python only for local file inspection, "
+                    "calculations, or transformations that do not require Method "
+                    "Hub access. Never attempt HTTP or Method Hub access from "
+                    "generated code. For question answering over a specific "
+                    "document, prefer `corpus_retrieve_context` and answer from "
+                    "its returned chunks. For question answering across the "
+                    "indexed corpus, prefer `corpus_retrieve_context` and answer "
+                    "from its returned chunks. Use retrieval tools instead of "
+                    "previewing an entire dataset when only relevant context is "
+                    "needed.\n\n"
+                )
+            )
             if method_hub_enabled
             else (
                 "Method Hub is disabled. Use execute_python when the request "
@@ -521,6 +534,7 @@ class GeneralPurposeEngine:
         return (
             "You are the only analysis agent for this request. Use the "
             "available tools to answer the objective.\n\n"
+            f"{execution_file_instructions}"
             f"{method_hub_instructions}"
             f"{uploaded_file_instructions}"
             f"{workspace_scope_instructions}"
@@ -589,6 +603,13 @@ def _selected_file_instructions(runtime: EngineRuntimeContext) -> str:
     scope = runtime.selected_files_scope
     if scope is None:
         return ""
+    if runtime.execution_files:
+        return (
+            "Direct input files listed above are already staged in this run and "
+            "are usable even when ingestion is incomplete. Use those files for "
+            "their content. For selected indexed documents without a direct input, "
+            "use the retrieval tools.\n\n"
+        )
     if not scope.document_ids:
         return (
             "No workspace files are selected for this run. Do not call workspace "
@@ -600,6 +621,29 @@ def _selected_file_instructions(runtime: EngineRuntimeContext) -> str:
         "runtime automatically applies this document scope. Do not search the "
         "local filesystem for workspace files and do not ask the user for a local "
         "path.\n\n"
+    )
+
+
+def _execution_file_instructions(runtime: EngineRuntimeContext) -> str:
+    files = [
+        {
+            "filename": item.get("filename"),
+            "sandbox_path": item.get("sandbox_path"),
+        }
+        for item in runtime.execution_files
+        if isinstance(item, dict)
+        and isinstance(item.get("filename"), str)
+        and isinstance(item.get("sandbox_path"), str)
+    ]
+    if not files:
+        return ""
+    return (
+        "Direct input files are already staged in the request sandbox. Treat them "
+        "like attachments and inspect their contents when answering. If the "
+        "objective refers to one of these files, you MUST call `execute_python` "
+        "before answering; do not answer from memory or retrieval and do not say "
+        "the file is inaccessible. Use the exact sandbox paths with execute_python: "
+        f"{json.dumps(files, ensure_ascii=False)}.\n\n"
     )
 
 
