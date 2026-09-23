@@ -305,6 +305,7 @@ class RuntimeOperationModelTests(unittest.TestCase):
                 execution_context=execution_context_payload(),
                 organization_id="org-1",
                 workspace_id="workspace-1",
+                user_id="user-1",
                 discover_workspace_files=True,
                 operation_id="op_1",
                 response_id="resp_1",
@@ -318,6 +319,7 @@ class RuntimeOperationModelTests(unittest.TestCase):
         engine = captured.get("markdown_report_engine")
         self.assertIsNotNone(engine)
         self.assertEqual(captured["default_organization_id"], "org-1")
+        self.assertEqual(captured["model"], "deepseek-v4-pro")
         self.assertTrue(captured.get("configure_default_sandbox", False))
         self.assertEqual(engine.workspace_id, "workspace-1")
         self.assertTrue(engine.discover_workspace_files)
@@ -329,6 +331,7 @@ class RuntimeOperationModelTests(unittest.TestCase):
         self.assertEqual(engine.organization_id, "org-1")
         self.assertEqual(engine.history, report_history_payload())
         self.assertEqual(captured["workspace_id"], "workspace-1")
+        self.assertEqual(captured["user_id"], "user-1")
         self.assertFalse(hasattr(engine, "service_token"))
 
     def test_default_pipeline_factory_skips_method_hub_for_engine_selection(self):

@@ -74,6 +74,21 @@ wheels = [
 ]
 
 [[package]]
+name = "axiom-model-client"
+version = "0.1.0"
+source = { directory = "../AXIOM/packages/axiom-model-client" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.11.0" },
+]
+
+[[package]]
 name = "axiom-sandbox-client"
 version = "0.1.0"
 source = { directory = "../AXIOM/packages/axiom-sandbox-client" }
@@ -400,27 +415,29 @@ name = "data-intelligence-sdk"
 version = "0.1.0"
 source = { editable = "packages/sdk" }
 dependencies = [
+    { name = "axiom-model-client" },
     { name = "deepagents" },
     { name = "dotenv" },
     { name = "httpx" },
+    { name = "jsonschema" },
     { name = "langchain" },
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "langsmith" },
-    { name = "jsonschema" },
     { name = "mcp", extra = ["cli"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "axiom-model-client", directory = "../AXIOM/packages/axiom-model-client" },
     { name = "deepagents", specifier = ">=0.6.12" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "jsonschema", specifier = ">=4.21" },
     { name = "langchain", specifier = ">=1.3.11" },
     { name = "langchain-openai", specifier = ">=1.3.3" },
     { name = "langgraph", specifier = ">=1.2.7" },
     { name = "langsmith", specifier = ">=0.9.5" },
-    { name = "jsonschema", specifier = ">=4.21" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.28.1" },
 ]
 

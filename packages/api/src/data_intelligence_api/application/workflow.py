@@ -150,6 +150,7 @@ def default_pipeline_factory(
     execution_files: list[dict[str, Any]] | None = None,
     organization_id: str | None = None,
     workspace_id: str | None = None,
+    user_id: str | None = None,
     primary_source_id: str | None = None,
     discover_workspace_files: bool = False,
     workflow: WorkflowName = "report",
@@ -207,6 +208,7 @@ def default_pipeline_factory(
         config_manager=config_manager,
         execution_context=execution_context,
         workspace_id=workspace_id,
+        user_id=user_id,
         use_llm_spec_builder=True,
         intent_service_base_url=(
             os.getenv("INTENT_SERVICE_BASE_URL")
@@ -219,6 +221,10 @@ def default_pipeline_factory(
         default_organization_id=(
             organization_id or os.getenv("DEFAULT_ORGANIZATION_ID", "test-org")
         ),
+        model=model,
+        operation_id=operation_id,
+        response_id=response_id,
+        trace_id=trace_id,
         configure_default_sandbox=include_method_hub,
         markdown_report_engine=markdown_report_engine,
         mcp_client=(
@@ -246,6 +252,7 @@ def _create_pipeline(
     execution_files: list[dict[str, Any]] | None = None,
     organization_id: str | None = None,
     workspace_id: str | None = None,
+    user_id: str | None = None,
     primary_source_id: str | None = None,
     discover_workspace_files: bool = False,
     operation_id: str | None = None,
@@ -278,6 +285,8 @@ def _create_pipeline(
         kwargs["organization_id"] = organization_id
     if supports_kwargs or "workspace_id" in parameter_names:
         kwargs["workspace_id"] = workspace_id
+    if supports_kwargs or "user_id" in parameter_names:
+        kwargs["user_id"] = user_id
     if supports_kwargs or "primary_source_id" in parameter_names:
         kwargs["primary_source_id"] = primary_source_id
     if supports_kwargs or "discover_workspace_files" in parameter_names:
@@ -312,6 +321,7 @@ def execute_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=invocation.runtime_options,
+        user_id=invocation.user_context.user_id,
     )
     return pipeline.run(
         invocation.query,
@@ -329,6 +339,7 @@ def prepare_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=invocation.runtime_options,
+        user_id=invocation.user_context.user_id,
     )
     return pipeline.prepare_markdown(
         invocation.query,
@@ -380,6 +391,7 @@ def execute_prepared_markdown_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
+        user_id=prepared.user_context.user_id,
         execution_context=execution_context,
         execution_files=execution_files,
         organization_id=organization_id,
@@ -420,6 +432,7 @@ def stream_prepared_markdown_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
+        user_id=prepared.user_context.user_id,
         **runtime_context,
     )
     spec = _execution_spec_from_markdown(prepared, spec_markdown, runtime_options)
@@ -468,6 +481,7 @@ def select_prepared_markdown_engine(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
+        user_id=prepared.user_context.user_id,
         include_method_hub=False,
         execution_context=execution_context,
         execution_files=execution_files,
@@ -505,6 +519,7 @@ def execute_instant_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=invocation.runtime_options,
+        user_id=invocation.user_context.user_id,
         **runtime_context,
     )
     spec = ExecutionSpec(
@@ -541,6 +556,7 @@ def stream_instant_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=invocation.runtime_options,
+        user_id=invocation.user_context.user_id,
         **runtime_context,
     )
     spec = ExecutionSpec(
@@ -584,6 +600,7 @@ def select_instant_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=invocation.runtime_options,
+        user_id=invocation.user_context.user_id,
         include_method_hub=False,
         **runtime_context,
     )
@@ -648,6 +665,7 @@ def revise_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
+        user_id=prepared.user_context.user_id,
     )
     return pipeline.revise_spec(prepared, previous_spec, feedback)
 
@@ -663,6 +681,7 @@ def execute_prepared_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
+        user_id=prepared.user_context.user_id,
     )
     return pipeline.execute_confirmed_spec(prepared, confirmed_spec)
 
