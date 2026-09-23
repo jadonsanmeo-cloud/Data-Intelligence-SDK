@@ -665,6 +665,7 @@ def create_example_pipeline(
                 allow_method_generation=allow_method_generation,
             )
         if engine_selector is None:
+            routing_llm_client: LLMClient
             if profile_llm_client is not None:
                 routing_llm_client = profile_llm_client
             else:

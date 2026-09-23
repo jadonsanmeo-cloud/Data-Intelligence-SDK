@@ -312,6 +312,10 @@ def _create_pipeline(
     return pipeline_factory(**kwargs)
 
 
+def _user_id_from_context(user_context: UserContext | None) -> str | None:
+    return user_context.user_id if user_context is not None else None
+
+
 def execute_workflow(
     invocation: WorkflowInvocation,
     logger: RuntimeLogger,
@@ -391,7 +395,7 @@ def execute_prepared_markdown_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
-        user_id=prepared.user_context.user_id,
+        user_id=_user_id_from_context(prepared.user_context),
         execution_context=execution_context,
         execution_files=execution_files,
         organization_id=organization_id,
@@ -432,7 +436,7 @@ def stream_prepared_markdown_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
-        user_id=prepared.user_context.user_id,
+        user_id=_user_id_from_context(prepared.user_context),
         **runtime_context,
     )
     spec = _execution_spec_from_markdown(prepared, spec_markdown, runtime_options)
@@ -481,7 +485,7 @@ def select_prepared_markdown_engine(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
-        user_id=prepared.user_context.user_id,
+        user_id=_user_id_from_context(prepared.user_context),
         include_method_hub=False,
         execution_context=execution_context,
         execution_files=execution_files,
@@ -665,7 +669,7 @@ def revise_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
-        user_id=prepared.user_context.user_id,
+        user_id=_user_id_from_context(prepared.user_context),
     )
     return pipeline.revise_spec(prepared, previous_spec, feedback)
 
@@ -681,7 +685,7 @@ def execute_prepared_workflow(
         pipeline_factory,
         logger=logger,
         runtime_options=runtime_options,
-        user_id=prepared.user_context.user_id,
+        user_id=_user_id_from_context(prepared.user_context),
     )
     return pipeline.execute_confirmed_spec(prepared, confirmed_spec)
 
