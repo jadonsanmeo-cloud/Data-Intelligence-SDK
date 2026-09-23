@@ -24,3 +24,5 @@ AXIOM/**
 AXIOM/packages/**
 !AXIOM/packages/axiom-sandbox-client/
 !AXIOM/packages/axiom-sandbox-client/**
+!AXIOM/packages/axiom-model-client/
+!AXIOM/packages/axiom-model-client/**

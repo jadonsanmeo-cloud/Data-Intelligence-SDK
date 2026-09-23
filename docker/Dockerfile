@@ -1,6 +1,6 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
-COPY --from=ghcr.io/astral-sh/uv:0.8.4 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.21 /uv /uvx /bin/
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -21,6 +21,8 @@ COPY Data-Intelligence-SDK/packages/sdk/src packages/sdk/src
 COPY Data-Intelligence-SDK/packages/api/src packages/api/src
 COPY AXIOM/packages/axiom-sandbox-client \
      /workspace/AXIOM/packages/axiom-sandbox-client
+COPY AXIOM/packages/axiom-model-client \
+     /workspace/AXIOM/packages/axiom-model-client
 
 RUN uv sync --frozen --no-dev --package data-intelligence-api --no-editable
 

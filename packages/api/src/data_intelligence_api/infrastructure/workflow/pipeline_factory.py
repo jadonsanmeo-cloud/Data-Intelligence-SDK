@@ -49,10 +49,13 @@ from data_intelligence_sdk.runtime.interfaces import (
 )
 from data_intelligence_sdk.runtime.llm_client import (
     LLMClient,
+    ModelServiceChatModel,
+    ModelServiceProfileLLMClient,
     OpenAICompatibleLLMClient,
 )
 from data_intelligence_sdk.runtime.logger import RuntimeLogger
 from data_intelligence_sdk.runtime.mcp_client import MCPMethodClient, MCPToolDefinition
+from data_intelligence_sdk.runtime.run_context import ModelRunContext
 from data_intelligence_sdk.sandbox.artifacts import (
     ArtifactStore,
     FilesystemArtifactStore,
@@ -63,6 +66,19 @@ from data_intelligence_sdk.spec.markdown_builder import LLMMarkdownSpecBuilder
 from data_intelligence_api.infrastructure.intent import AxiomIntentServiceAnalyzer
 
 DEFAULT_QUERYAI_REASON_URL = "http://localhost:7205/query"
+
+
+def _is_model_resource_id(value: str | None) -> bool:
+    """Return whether a selected model is a canonical UUID resource ID."""
+
+    if not value:
+        return False
+    candidate = value.strip()
+    try:
+        parsed = UUID(candidate)
+    except ValueError:
+        return False
+    return str(parsed) == candidate.lower()
 
 
 class _SpecBuilderDelegate(Protocol):
@@ -515,6 +531,7 @@ def create_example_pipeline(
     execution_context: dict[str, object] | None = None,
     execution_files: list[dict[str, Any]] | None = None,
     workspace_id: str | None = None,
+    user_id: str | None = None,
     spec_builder: object | None = None,
     spec_llm_client: LLMClient | None = None,
     engine_selector: EngineSelector | None = None,
@@ -533,6 +550,9 @@ def create_example_pipeline(
     intent_service_base_url: str | None = None,
     queryai_reason_endpoint: str | None = None,
     default_organization_id: str | None = None,
+    operation_id: str | None = None,
+    response_id: str | None = None,
+    trace_id: str | None = None,
     markdown_report_engine: _MarkdownReportEngine | None = None,
 ) -> DataIntelligencePipeline:
     resolved_config_manager = config_manager or ConfigManager(config_path)
@@ -550,6 +570,49 @@ def create_example_pipeline(
     if method_hub_enabled is None and mcp_client is not None and not resolved_mcp_tools:
         resolved_mcp_tools = tuple(mcp_client.list_agent_tools())
     shared_llm_client = spec_llm_client
+    profile_llm_client: ModelServiceProfileLLMClient | None = None
+    model_service_url = os.getenv("MODEL_SERVICE_URL", "").strip()
+    model_service_token = os.getenv("MODEL_SERVICE_TOKEN", "").strip()
+    if model_service_token and not model_service_url:
+        raise ValueError(
+            "MODEL_SERVICE_URL must be configured when MODEL_SERVICE_TOKEN is set."
+        )
+    if model_service_url:
+        if not default_organization_id or not workspace_id:
+            raise ValueError(
+                "organization_id and workspace_id are required in AXIOM Model Service mode."
+            )
+        if shared_llm_client is not None and not isinstance(
+            shared_llm_client, ModelServiceProfileLLMClient
+        ):
+            raise ValueError(
+                "spec_llm_client cannot override Model Service routing in AXIOM mode."
+            )
+        config_revision_raw = os.getenv("MODEL_SERVICE_CONFIG_REVISION", "").strip()
+        config_revision = int(config_revision_raw) if config_revision_raw else None
+        profile_llm_client = ModelServiceProfileLLMClient(
+            model_service_url,
+            context=ModelRunContext(
+                organization_id=default_organization_id,
+                workspace_id=workspace_id,
+                consumer_service=os.getenv(
+                    "MODEL_SERVICE_CONSUMER_SERVICE",
+                    "data-intelligence-api",
+                ),
+                service_token=model_service_token,
+                run_id=response_id or operation_id or "data-intelligence-run",
+                trace_id=trace_id,
+                user_id=user_id,
+                config_revision=config_revision,
+            ),
+            consumer_id=os.getenv("MODEL_SERVICE_CONSUMER_ID", "data-intelligence"),
+            model_resource_id=model,
+        )
+        shared_llm_client = profile_llm_client
+    elif _is_model_resource_id(model):
+        raise ValueError(
+            "MODEL_SERVICE_URL must be configured when model is a Model Service resource ID."
+        )
     if artifact_store is None:
         artifact_settings = resolved_config_manager.artifact_settings()
         artifact_store = FilesystemArtifactStore(artifact_settings.root)
@@ -588,6 +651,11 @@ def create_example_pipeline(
         )
         if llm is not None:
             general_engine = GeneralPurposeEngine(llm=llm)
+        elif profile_llm_client is not None:
+            general_engine = GeneralPurposeEngine(
+                llm=ModelServiceChatModel(profile_llm_client),
+                allow_method_generation=allow_method_generation,
+            )
         else:
             general_engine = GeneralPurposeEngine(
                 model=model,
@@ -597,12 +665,16 @@ def create_example_pipeline(
                 allow_method_generation=allow_method_generation,
             )
         if engine_selector is None:
-            settings = resolved_config_manager.openrouter_settings()
-            routing_llm_client = OpenAICompatibleLLMClient(
-                base_url=settings.base_url,
-                api_key=api_key or settings.api_key,
-                model=settings.model,
-            )
+            routing_llm_client: LLMClient
+            if profile_llm_client is not None:
+                routing_llm_client = profile_llm_client
+            else:
+                settings = resolved_config_manager.openrouter_settings()
+                routing_llm_client = OpenAICompatibleLLMClient(
+                    base_url=settings.base_url,
+                    api_key=api_key or settings.api_key,
+                    model=settings.model,
+                )
             engine_selector = LLMEngineSelector(routing_llm_client)
         registry = InMemoryEngineRegistry(selector=engine_selector)
         registry.register(general_engine)

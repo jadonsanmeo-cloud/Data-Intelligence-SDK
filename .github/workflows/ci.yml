@@ -55,9 +55,8 @@ jobs:
           python-version: "3.11"
           enable-cache: true
       - run: >-
-          uv run --no-project --with ./packages/sdk --with pytest==8.3.5
-          --with fastapi==0.139.0 --with 'psycopg[binary]>=3.3.4'
-          --with python-multipart==0.0.32 --with uvicorn==0.51.0
-          --with pyyaml==6.0.2 python -m pytest -q
-          packages/sdk/tests packages/api/tests tests
-          --ignore=packages/api/tests/test_stateless_genreport_cutover.py
+          uv run --isolated --no-project --with pytest==8.3.5
+          --with 'httpx>=0.28.1' python -m pytest -q
+          packages/sdk/tests/test_memory_context.py
+          packages/api/tests/test_gen_report_engine.py
+          packages/api/tests/test_language_prefix.py

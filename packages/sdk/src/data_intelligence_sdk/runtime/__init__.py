@@ -28,8 +28,14 @@ from data_intelligence_sdk.runtime.logger import (
     RuntimeLogger,
 )
 from data_intelligence_sdk.runtime.llm_client import (
+    AXIOM_STAGE_TASK_MAP,
     LLMClient,
+    ModelServiceChatModel,
+    ModelServiceLLMClient,
+    ModelServiceProfileLLMClient,
     OpenAICompatibleLLMClient,
+    axiom_task_for_stage,
+    canonical_consumer_id,
 )
 from data_intelligence_sdk.runtime.mcp_client import (
     MCPClientError,
@@ -37,7 +43,11 @@ from data_intelligence_sdk.runtime.mcp_client import (
     MCPToolDefinition,
     MCPToolError,
 )
-from data_intelligence_sdk.runtime.run_context import EngineRunContext
+from data_intelligence_sdk.runtime.run_context import (
+    AxiomRunContext,
+    EngineRunContext,
+    ModelRunContext,
+)
 from data_intelligence_sdk.runtime.selected_files import (
     SelectedFilesScope,
     SelectedFilesScopeError,
@@ -62,6 +72,7 @@ __all__ = [
     "DeepAgentSandboxSession",
     "EngineSandboxSession",
     "EngineRunContext",
+    "AxiomRunContext",
     "EngineRuntimeContext",
     "FileRuntimeLogger",
     "FilesystemArtifactStore",
@@ -70,12 +81,19 @@ __all__ = [
     "InterfaceRegistry",
     "InMemoryInterfaceRegistry",
     "LLMClient",
+    "ModelServiceChatModel",
+    "ModelRunContext",
+    "ModelServiceLLMClient",
+    "ModelServiceProfileLLMClient",
     "MethodHubSettings",
     "MCPClientError",
     "MCPMethodClient",
     "MCPToolDefinition",
     "MCPToolError",
     "OpenAICompatibleLLMClient",
+    "AXIOM_STAGE_TASK_MAP",
+    "axiom_task_for_stage",
+    "canonical_consumer_id",
     "OpenRouterSettings",
     "SandboxSettings",
     "SandboxEnvironment",
