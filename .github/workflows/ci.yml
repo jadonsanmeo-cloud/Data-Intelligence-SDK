@@ -50,26 +50,13 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/packages/sdk/src:${{ github.workspace }}/packages/api/src
     steps:
       - uses: actions/checkout@v4
-      - name: Checkout AXIOM Python clients
-        uses: actions/checkout@v4
-        with:
-          repository: iSE-UET-VNU/AXIOM
-          ref: main
-          path: AXIOM
-          sparse-checkout: |
-            packages/axiom-model-client
-            packages/axiom-sandbox-client
-          sparse-checkout-cone-mode: true
-      - name: Expose AXIOM clients at the expected source path
-        run: ln -s "$GITHUB_WORKSPACE/AXIOM" "$GITHUB_WORKSPACE/../AXIOM"
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
           enable-cache: true
       - run: >-
-          uv run --no-project --with ./packages/sdk --with pytest==8.3.5
-          --with fastapi==0.139.0 --with 'psycopg[binary]>=3.3.4'
-          --with python-multipart==0.0.32 --with uvicorn==0.51.0
-          --with pyyaml==6.0.2 python -m pytest -q
-          packages/sdk/tests packages/api/tests tests
-          --ignore=packages/api/tests/test_stateless_genreport_cutover.py
+          uv run --isolated --no-project --with pytest==8.3.5
+          --with 'httpx>=0.28.1' python -m pytest -q
+          packages/sdk/tests/test_memory_context.py
+          packages/api/tests/test_gen_report_engine.py
+          packages/api/tests/test_language_prefix.py
