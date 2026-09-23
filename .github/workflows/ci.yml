@@ -50,6 +50,18 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/packages/sdk/src:${{ github.workspace }}/packages/api/src
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout AXIOM Python clients
+        uses: actions/checkout@v4
+        with:
+          repository: iSE-UET-VNU/AXIOM
+          ref: main
+          path: AXIOM
+          sparse-checkout: |
+            packages/axiom-model-client
+            packages/axiom-sandbox-client
+          sparse-checkout-cone-mode: true
+      - name: Expose AXIOM clients at the expected source path
+        run: ln -s "$GITHUB_WORKSPACE/AXIOM" "$GITHUB_WORKSPACE/../AXIOM"
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
