@@ -98,7 +98,7 @@ def test_general_engine_prompt_explains_selected_workspace_files() -> None:
     assert "do not ask the user for a local path" in prompt.lower()
 
 
-def test_general_engine_prompt_does_not_expose_a_staged_selected_file_path() -> None:
+def test_general_engine_prompt_explains_staged_selected_file_inputs() -> None:
     engine = GeneralPurposeEngine(llm=object())
     prompt = engine._system_prompt(
         ExecutionSpec(intent="general", objective="What is this file about?"),
@@ -106,12 +106,36 @@ def test_general_engine_prompt_does_not_expose_a_staged_selected_file_path() -> 
             selected_files_scope=SelectedFilesScope(document_ids=("document-1",)),
             execution_files=(
                 {
-                    "filename": "report.pdf",
-                    "sandbox_path": "/workspace/runs/resp-1/inputs/report.pdf",
+                    "filename": "Thư_giới_thiệu.pdf",
+                    "sandbox_path": "/workspace/runs/resp-1/inputs/Thư_giới_thiệu.pdf",
                 },
             ),
         ),
         UserQuery(text="What is this file about?"),
     )
 
-    assert "/workspace/runs/resp-1/inputs/report.pdf" not in prompt
+    assert "/workspace/runs/resp-1/inputs/Thư_giới_thiệu.pdf" in prompt
+    assert "execute_python" in prompt
+    assert "already staged" in prompt.lower()
+
+
+def test_general_engine_prompt_prioritizes_direct_file_inputs_over_retrieval() -> None:
+    engine = GeneralPurposeEngine(llm=object())
+    prompt = engine._system_prompt(
+        ExecutionSpec(intent="general", objective="Who is this letter about?"),
+        EngineRuntimeContext(
+            mcp_client=object(),
+            mcp_tools=(MCPToolDefinition(name="corpus_retrieve_context"),),
+            selected_files_scope=SelectedFilesScope(document_ids=("document-1",)),
+            execution_files=(
+                {
+                    "filename": "letter.pdf",
+                    "sandbox_path": "/workspace/runs/resp-1/inputs/letter.pdf",
+                },
+            ),
+        ),
+        UserQuery(text="Who is this letter about?"),
+    )
+
+    assert prompt.index("Direct input files") < prompt.index("Method Hub is enabled")
+    assert "must call `execute_python`" in prompt.lower()

@@ -334,6 +334,37 @@ class RuntimeOperationModelTests(unittest.TestCase):
         self.assertEqual(captured["user_id"], "user-1")
         self.assertFalse(hasattr(engine, "service_token"))
 
+    def test_default_pipeline_factory_passes_execution_files_to_general_pipeline(self):
+        captured: dict = {}
+        pipeline = object()
+        execution_files = [
+            {
+                "artifact_id": "asset-1",
+                "filename": "report.pdf",
+                "sandbox_path": "/workspace/runs/resp-1/inputs/report.pdf",
+            }
+        ]
+
+        def capture_pipeline(**kwargs):
+            captured.update(kwargs)
+            return pipeline
+
+        with patch(
+            "data_intelligence_api.application.workflow.create_example_pipeline",
+            side_effect=capture_pipeline,
+        ):
+            result = default_pipeline_factory(
+                logger=SimpleNamespace(),
+                runtime_options=WorkflowRuntimeOptions(
+                    method_hub_enabled=False,
+                    engine="general",
+                ),
+                execution_files=execution_files,
+            )
+
+        self.assertIs(result, pipeline)
+        self.assertEqual(captured["execution_files"], execution_files)
+
     def test_default_pipeline_factory_skips_method_hub_for_engine_selection(self):
         captured: dict = {}
         pipeline = object()
