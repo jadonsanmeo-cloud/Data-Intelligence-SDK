@@ -173,16 +173,6 @@ class DataIntelligencePipeline:
             workspace_id=self.workspace_id,
         )
 
-    def _workspace_skills(self, query: UserQuery):
-        client = self._skill_registry_client(query)
-        if client is None:
-            return ()
-        try:
-            return client.load()
-        except (httpx.HTTPError, ValueError):
-            self._log("workspace_skills_unavailable")
-            return ()
-
     @staticmethod
     def _internal_memory_context(query: UserQuery) -> InternalMemoryContext:
         return InternalMemoryContext.from_payload(
@@ -576,7 +566,7 @@ class DataIntelligencePipeline:
                     ),
                     internal_memory_client=self._internal_memory_client(prepared.query),
                     workspace_id=self.workspace_id,
-                    workspace_skills=self._workspace_skills(prepared.query),
+                    skill_registry_client=self._skill_registry_client(prepared.query),
                     selected_files_scope=_selected_files_scope(
                         prepared.session_context
                     ),
@@ -712,7 +702,7 @@ class DataIntelligencePipeline:
                     ),
                     internal_memory_client=self._internal_memory_client(prepared.query),
                     workspace_id=self.workspace_id,
-                    workspace_skills=self._workspace_skills(prepared.query),
+                    skill_registry_client=self._skill_registry_client(prepared.query),
                     selected_files_scope=_selected_files_scope(
                         prepared.session_context
                     ),
@@ -863,7 +853,7 @@ class DataIntelligencePipeline:
                     ),
                     internal_memory_client=self._internal_memory_client(prepared.query),
                     workspace_id=self.workspace_id,
-                    workspace_skills=self._workspace_skills(prepared.query),
+                    skill_registry_client=self._skill_registry_client(prepared.query),
                     selected_files_scope=_selected_files_scope(
                         prepared.session_context
                     ),

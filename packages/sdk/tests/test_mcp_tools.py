@@ -1,8 +1,7 @@
 import pytest
-
-from data_intelligence_sdk.runtime.selected_files import SelectedFilesScope
 from data_intelligence_sdk.runtime.engine_runtime import EngineRuntimeContext
 from data_intelligence_sdk.runtime.mcp_client import MCPToolDefinition
+from data_intelligence_sdk.runtime.selected_files import SelectedFilesScope
 from data_intelligence_sdk.tools.mcp import (
     SelectedFilesScopeError,
     _call_remote_tool,
@@ -44,6 +43,29 @@ def test_workspace_id_is_injected_for_selected_file_lookup() -> None:
     assert client.arguments == (
         "corpus_get_file_ingested_data",
         {"document_id": "document-1", "workspace_id": "workspace-1"},
+    )
+
+
+def test_empty_selected_file_scope_does_not_block_skill_materialization() -> None:
+    client = RecordingMcpClient()
+    runtime = EngineRuntimeContext(
+        mcp_client=client,
+        workspace_id="workspace-1",
+        selected_files_scope=SelectedFilesScope(document_ids=()),
+    )
+
+    _call_remote_tool(
+        runtime,
+        MCPToolDefinition(name="materialize_skill"),
+        {"skill_markdown": "---\nname: reusable-workflow\n---\n# Workflow"},
+    )
+
+    assert client.arguments == (
+        "materialize_skill",
+        {
+            "skill_markdown": "---\nname: reusable-workflow\n---\n# Workflow",
+            "workspace_id": "workspace-1",
+        },
     )
 
 

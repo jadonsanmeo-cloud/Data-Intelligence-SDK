@@ -20,6 +20,7 @@ from typing import Any, AsyncContextManager, Callable
 from data_intelligence_sdk.runtime.tool_subscriptions import registered_tool_names
 
 LOGGER = logging.getLogger(__name__)
+_ALWAYS_BOUND_AGENT_TOOL_NAMES = frozenset({"materialize_skill"})
 
 
 class MCPClientError(RuntimeError):
@@ -105,9 +106,10 @@ class MCPMethodClient:
         names = await registered_tool_names(
             self.organization_id or "", self.user_authorization
         )
-        if not names:
-            return []
-        return [tool for tool in await self._list_tools_async() if tool.name in names]
+        bound_names = names | _ALWAYS_BOUND_AGENT_TOOL_NAMES
+        return [
+            tool for tool in await self._list_tools_async() if tool.name in bound_names
+        ]
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Invoke one remote MCP tool and return structured result data."""

@@ -37,6 +37,7 @@ class EngineRuntimeContext:
     sandbox: EngineSandboxSession | None = None
     run_artifact: RunArtifactSession | None = None
     internal_memory_client: Any | None = None
+    skill_registry_client: Any | None = None
     internal_memory_context: InternalMemoryContext = field(
         default_factory=InternalMemoryContext
     )

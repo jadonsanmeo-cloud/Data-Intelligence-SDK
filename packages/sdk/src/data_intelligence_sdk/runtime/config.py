@@ -49,10 +49,10 @@ class InternalMemoryServiceSettings:
 
 @dataclass(frozen=True, slots=True)
 class SkillRegistryServiceSettings:
-    """Connection settings for optional workspace-skill prompt injection."""
+    """Connection settings for request-scoped on-demand skill loading."""
 
     endpoint: str = "http://skill-registry:9000"
-    enabled: bool = False
+    enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,7 +243,7 @@ class ConfigManager:
         payload = self.load().get("skill_registry_service", {})
         endpoint = _resolve_env_value(payload.get("endpoint"))
         raw_enabled = payload.get(
-            "enabled", os.environ.get("SKILL_REGISTRY_ENABLED", "false")
+            "enabled", os.environ.get("SKILL_REGISTRY_ENABLED", "true")
         )
         enabled = str(_resolve_env_value(raw_enabled)).strip().lower() in {
             "1",

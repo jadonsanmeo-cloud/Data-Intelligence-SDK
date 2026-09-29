@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from data_intelligence_sdk.core.types import ExecutionSpec, UserQuery
 from data_intelligence_sdk.engines.general import GeneralPurposeEngine
 from data_intelligence_sdk.runtime.engine_runtime import EngineRuntimeContext
@@ -37,7 +39,7 @@ def test_general_engine_prompt_explains_current_workspace_scope() -> None:
     assert "do not ask the user for a workspace_id" in prompt.lower()
 
 
-def test_general_engine_prompt_injects_enabled_workspace_skills() -> None:
+def test_general_engine_prompt_does_not_eagerly_inject_workspace_skill_bodies() -> None:
     engine = GeneralPurposeEngine(llm=object())
     prompt = engine._system_prompt(
         ExecutionSpec(intent="general", objective="Validate the report."),
@@ -54,9 +56,74 @@ def test_general_engine_prompt_injects_enabled_workspace_skills() -> None:
         UserQuery(text="Validate the report."),
     )
 
-    assert "Enabled workspace skills" in prompt
-    assert "Report validation" in prompt
-    assert "Check source totals first." in prompt
+    assert "Enabled workspace skills" not in prompt
+    assert "Check source totals first." not in prompt
+
+
+def test_general_engine_prompt_separates_memory_from_experience_skills() -> None:
+    engine = GeneralPurposeEngine(llm=object())
+    prompt = engine._system_prompt(
+        ExecutionSpec(intent="general", objective="Remember this workflow."),
+        EngineRuntimeContext(skill_registry_client=object()),
+        UserQuery(text="Remember this workflow."),
+    )
+
+    assert "load_skill" in prompt
+    assert "skill-creator" in prompt
+    assert "scope `global`" in prompt
+    assert "materialize_skill" in prompt
+    assert "Use `memory` for facts and preferences" in prompt
+    assert "User-owned skills are available across the user's workspaces" in prompt
+    assert "Organization admins may apply a user-owned skill to everyone" in prompt
+    assert "Never create organization-scoped skills" in prompt
+
+
+def test_general_agent_binds_materialize_skill_from_method_hub(monkeypatch) -> None:
+    captured = {}
+
+    def agent_factory(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "data_intelligence_sdk.engines.general.create_execute_python_tool",
+        lambda runtime: type("Tool", (), {"name": "execute_python"})(),
+    )
+    monkeypatch.setattr(
+        "data_intelligence_sdk.engines.general.DeepAgentSandboxBackend",
+        lambda sandbox: sandbox,
+    )
+    engine = GeneralPurposeEngine(llm=object(), agent_factory=agent_factory)
+    engine._register_minimal_profile = lambda: None
+    runtime = EngineRuntimeContext(
+        mcp_client=object(),
+        mcp_tools=(
+            MCPToolDefinition(
+                name="materialize_skill",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "workspace_id": {"type": "string"},
+                        "skill_markdown": {"type": "string"},
+                        "scope": {"type": "string"},
+                    },
+                    "required": ["workspace_id", "skill_markdown"],
+                },
+            ),
+        ),
+        workspace_id="workspace-1",
+        sandbox=object(),
+    )
+
+    engine._build_agent(
+        SimpleNamespace(
+            spec=ExecutionSpec(intent="general", objective="Save a workflow."),
+            runtime=runtime,
+            query=UserQuery(text="Remember this workflow."),
+        )
+    )
+
+    assert "materialize_skill" in {tool.name for tool in captured["tools"]}
 
 
 def test_general_engine_builds_llm_messages_from_conversation_history() -> None:

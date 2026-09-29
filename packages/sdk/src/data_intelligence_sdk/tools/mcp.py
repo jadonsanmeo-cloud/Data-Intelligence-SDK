@@ -45,13 +45,14 @@ def _scoped_tool_arguments(
     if runtime.selected_files_scope is None:
         return scoped_arguments
 
-    selected_ids = _selected_document_ids(runtime)
     if definition.name in _CORPUS_SCOPE_TOOL_NAMES:
+        selected_ids = _selected_document_ids(runtime)
         scoped_arguments.pop("document_id", None)
         scoped_arguments["document_ids"] = selected_ids
         return scoped_arguments
 
     if definition.name == "corpus_get_file_ingested_data":
+        selected_ids = _selected_document_ids(runtime)
         document_id = _normalized_selector(scoped_arguments.get("document_id"))
         if document_id is not None and document_id not in selected_ids:
             raise SelectedFilesScopeError(
@@ -73,6 +74,7 @@ def _scoped_tool_arguments(
         return scoped_arguments
 
     if definition.name == "get_neighbor_chunk":
+        selected_ids = _selected_document_ids(runtime)
         file_id = _normalized_selector(scoped_arguments.get("file_id"))
         if file_id is None:
             if len(selected_ids) != 1:

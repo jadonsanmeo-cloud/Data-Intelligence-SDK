@@ -16,6 +16,7 @@ class WorkspaceSkill:
     name: str
     description: str
     body: str
+    scope: str = "global"
 
 
 class SkillRegistryClient:
@@ -77,9 +78,72 @@ class SkillRegistryClient:
                         payload.get("description") or item.get("description") or ""
                     ),
                     body=body,
+                    scope=str(payload.get("scope") or item.get("scope") or "global"),
                 )
             )
         return tuple(skills)
+
+    def load_skill(
+        self, skill_name: str, *, scope: str | None = None
+    ) -> WorkspaceSkill:
+        clean_name = skill_name.strip()
+        if not clean_name:
+            raise ValueError("skill_name must not be empty")
+        response = self._http.get(
+            f"{self._base_url}/skills",
+            params={"workspace_id": self._workspace_id},
+            headers=self._headers,
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        summaries = response.json()
+        if not isinstance(summaries, list):
+            raise ValueError("Skill Registry list response must be a JSON array")
+        matches = [
+            item
+            for item in summaries
+            if isinstance(item, dict)
+            and str(item.get("name") or "").casefold() == clean_name.casefold()
+            and (scope is None or item.get("scope") == scope)
+        ]
+        if not matches:
+            raise LookupError(f"No accessible skill named {clean_name!r} was found.")
+        if len(matches) > 1:
+            available_scopes = sorted(
+                {str(item.get("scope") or "unknown") for item in matches}
+            )
+            raise ValueError(
+                f"Skill name {clean_name!r} is ambiguous; select a scope: "
+                + ", ".join(available_scopes)
+            )
+        return self._load_summary(matches[0])
+
+    def _load_summary(self, item: dict[str, Any]) -> WorkspaceSkill:
+        skill_id = item.get("id")
+        if not isinstance(skill_id, str) or not skill_id:
+            raise ValueError("Skill Registry list item is missing an ID")
+        detail = self._http.get(
+            f"{self._base_url}/skills/{skill_id}",
+            params={"workspace_id": self._workspace_id},
+            headers=self._headers,
+            timeout=10.0,
+        )
+        detail.raise_for_status()
+        payload = detail.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Skill Registry detail response must be a JSON object")
+        body = payload.get("body")
+        if not isinstance(body, str) or not body.strip():
+            raise LookupError(f"Skill {skill_id!r} has no prompt body.")
+        return WorkspaceSkill(
+            skill_id=str(payload.get("id") or skill_id),
+            name=str(payload.get("name") or item.get("name") or skill_id),
+            description=str(
+                payload.get("description") or item.get("description") or ""
+            ),
+            body=body,
+            scope=str(payload.get("scope") or item.get("scope") or "global"),
+        )
 
 
 def create_skill_registry_client(

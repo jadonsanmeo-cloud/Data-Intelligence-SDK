@@ -36,6 +36,7 @@ from data_intelligence_sdk.registry.engine_selector import (
 from data_intelligence_sdk.runtime.config import (
     ConfigManager,
     InternalMemoryServiceSettings,
+    SkillRegistryServiceSettings,
 )
 from data_intelligence_sdk.runtime.sandbox import (
     EngineSandboxSession,
@@ -566,6 +567,16 @@ def create_example_pipeline(
         if callable(get_internal_memory_settings)
         else InternalMemoryServiceSettings()
     )
+    get_skill_registry_settings = getattr(
+        resolved_config_manager,
+        "skill_registry_service_settings",
+        None,
+    )
+    skill_registry_settings = (
+        get_skill_registry_settings()
+        if callable(get_skill_registry_settings)
+        else SkillRegistryServiceSettings()
+    )
     resolved_mcp_tools = mcp_tools
     if method_hub_enabled is None and mcp_client is not None and not resolved_mcp_tools:
         resolved_mcp_tools = tuple(mcp_client.list_agent_tools())
@@ -725,6 +736,11 @@ def create_example_pipeline(
         internal_memory_service_url=(
             internal_memory_settings.endpoint
             if internal_memory_settings.enabled
+            else None
+        ),
+        skill_registry_service_url=(
+            skill_registry_settings.endpoint
+            if skill_registry_settings.enabled
             else None
         ),
     )

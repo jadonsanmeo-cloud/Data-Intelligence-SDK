@@ -30,11 +30,11 @@ from data_intelligence_sdk.runtime.config import ConfigManager, get_config_manag
 from data_intelligence_sdk.runtime.deep_agent_backend import DeepAgentSandboxBackend
 from data_intelligence_sdk.runtime.engine_runtime import EngineRuntimeContext
 from data_intelligence_sdk.runtime.mcp_client import MCPToolError
-from data_intelligence_sdk.runtime.skills import render_workspace_skills
 from data_intelligence_sdk.tools import (
     create_execute_python_tool,
     create_internal_memory_tools,
     create_mcp_tools,
+    create_skill_tools,
 )
 
 
@@ -329,10 +329,11 @@ class GeneralPurposeEngine:
             runtime,
             include_session_history=False,
         )
+        skill_tools = create_skill_tools(runtime)
         self._register_minimal_profile()
         return self.agent_factory(
             model=self.llm,
-            tools=[*mcp_tools, *internal_memory_tools, execute_python],
+            tools=[*mcp_tools, *internal_memory_tools, *skill_tools, execute_python],
             middleware=[_recover_tool_errors],
             system_prompt=self._system_prompt(spec, runtime, input.query),
             backend=DeepAgentSandboxBackend(runtime.sandbox),
@@ -515,15 +516,30 @@ class GeneralPurposeEngine:
         )
         selected_file_instructions = _selected_file_instructions(runtime)
         workspace_scope_instructions = _workspace_scope_instructions(runtime)
-        workspace_skill_instructions = render_workspace_skills(runtime.workspace_skills)
+        skill_instructions = (
+            "Reusable procedures are skills. Call `load_skill` to retrieve a relevant "
+            "skill only when needed. When a user asks to remember a successful answer "
+            "or workflow, load `skill-creator` with scope `global` and use "
+            "`materialize_skill` "
+            "to persist a reusable procedure. Use `memory` for facts and preferences, "
+            "not procedures. User-owned skills are available across the user's workspaces "
+            "within the organization. Organization admins may apply a user-owned skill "
+            "to everyone in the organization from Skills settings, and any user may "
+            "disable a skill for themselves. Do not use the active workspace as the "
+            "user-skill ownership boundary. Workspace admins may explicitly share a "
+            "skill within their workspace. Never create organization-scoped skills.\n\n"
+            if runtime.skill_registry_client is not None
+            else ""
+        )
         internal_memory_instructions = (
             "Internal memory is available. The USER.md and MEMORY.md sections "
             "below are a frozen snapshot for this request. Use `memory` only for "
             "durable, high-value facts: "
-            "write stable user preferences to `user`, and durable agent/project "
+            "write stable user preferences to `user`, and durable factual "
             "knowledge to `memory`. Do not save transient task state, raw logs, "
             "or duplicate facts. `replace` and `remove` require the exact existing "
-            "entry in `match`.\n\n"
+            "entry in `match`. Use `memory` for facts and preferences; use skills for "
+            "repeatable procedures.\n\n"
             if runtime.internal_memory_client is not None
             else ""
         )
@@ -538,7 +554,7 @@ class GeneralPurposeEngine:
             f"{method_hub_instructions}"
             f"{uploaded_file_instructions}"
             f"{workspace_scope_instructions}"
-            f"{workspace_skill_instructions}"
+            f"{skill_instructions}"
             f"{selected_file_instructions}"
             f"{internal_memory_instructions}"
             f"{internal_memory_context}"

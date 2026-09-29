@@ -9,7 +9,12 @@ from data_intelligence_sdk.runtime.mcp_client import MCPMethodClient
 def test_agent_binding_filters_org_snapshot_but_raw_catalog_remains_full(monkeypatch):
     session = AsyncMock()
     session.list_tools.return_value = {
-        "tools": [{"name": "allowed"}, {"name": "other"}]
+        "tools": [
+            {"name": "allowed"},
+            {"name": "other"},
+            {"name": "materialize_skill"},
+            {"name": "remember_skill"},
+        ]
     }
 
     @asynccontextmanager
@@ -26,11 +31,19 @@ def test_agent_binding_filters_org_snapshot_but_raw_catalog_remains_full(monkeyp
         user_authorization="Bearer token",
         session_factory=factory,
     )
-    assert [tool.name for tool in client.list_tools()] == ["allowed", "other"]
-    assert [tool.name for tool in client.list_agent_tools()] == ["allowed"]
+    assert [tool.name for tool in client.list_tools()] == [
+        "allowed",
+        "other",
+        "materialize_skill",
+        "remember_skill",
+    ]
+    assert [tool.name for tool in client.list_agent_tools()] == [
+        "allowed",
+        "materialize_skill",
+    ]
     loader.assert_awaited_with("org", "Bearer token")
     loader.return_value = set()
-    assert client.list_agent_tools() == []
+    assert [tool.name for tool in client.list_agent_tools()] == ["materialize_skill"]
     loader.side_effect = RuntimeError("unavailable")
     with pytest.raises(RuntimeError):
         client.list_agent_tools()
