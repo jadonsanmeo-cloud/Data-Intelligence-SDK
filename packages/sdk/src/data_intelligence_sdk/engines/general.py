@@ -75,12 +75,12 @@ AgentFactory = Callable[..., AgentInvoker]
 _HIDDEN_DEEP_AGENT_TOOLS = frozenset(
     {
         "write_todos",
-        "ls",
+        # "ls",
         "read_file",
         "edit_file",
         "delete",
-        "glob",
-        "grep",
+        # "glob",
+        # "grep",
         "execute",
         "write_file",
     }
