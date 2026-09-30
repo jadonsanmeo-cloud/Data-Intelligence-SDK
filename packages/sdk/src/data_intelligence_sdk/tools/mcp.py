@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -168,6 +169,9 @@ def _call_remote_tool(
     definition: MCPToolDefinition,
     arguments: dict[str, Any],
 ) -> Any:
+    if definition.name != "materialize_skill":
+        runtime.run_context.require_data_access_allowed()
+        runtime.run_context.mark_data_access()
     if runtime.mcp_client is None:
         raise RuntimeError("Method Hub is enabled but its MCP client is unavailable.")
     try:
@@ -190,6 +194,8 @@ def _call_remote_tool(
             outputs={"error": str(exc), "provider": "mcp"},
         )
         raise
+    if definition.name == "corpus_retrieve_context":
+        _register_corpus_citation_evidence(runtime, result)
     runtime.run_context.record_method_call(
         definition.name,
         status="completed",
@@ -197,6 +203,66 @@ def _call_remote_tool(
         outputs={"result": result, "provider": "mcp"},
     )
     return result
+
+
+def _register_corpus_citation_evidence(
+    runtime: EngineRuntimeContext,
+    result: Any,
+) -> None:
+    if not isinstance(result, Mapping):
+        return
+    chunks = result.get("chunks")
+    if not isinstance(chunks, list):
+        return
+    for chunk in chunks:
+        if not isinstance(chunk, Mapping):
+            continue
+        document = chunk.get("document")
+        if not isinstance(document, Mapping):
+            continue
+        document_id = _nonempty_string(document.get("document_id"))
+        content_id = _nonempty_string(chunk.get("content_id")) or _nonempty_string(
+            chunk.get("embedding_id")
+        )
+        excerpt = _nonempty_string(chunk.get("text"))
+        if not document_id or not content_id or not excerpt:
+            continue
+        source = _nonempty_string(document.get("file_name")) or document_id
+        runtime.run_context.register_citation_evidence(
+            source=source,
+            locator=_corpus_chunk_locator(chunk.get("position"), content_id),
+            excerpt=excerpt,
+            document_id=document_id,
+            content_id=content_id,
+        )
+
+
+def _corpus_chunk_locator(position: Any, content_id: str) -> str:
+    if not isinstance(position, Mapping):
+        return f"chunk {content_id}"
+    fields = (
+        ("page", "page"),
+        ("page_number", "page"),
+        ("section", "section"),
+        ("sheet", "sheet"),
+        ("row", "row"),
+        ("chunk_index", "chunk"),
+    )
+    parts: list[str] = []
+    for key, label in fields:
+        value = position.get(key)
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            rendered = str(value).strip()
+            if not any(part.startswith(f"{label} ") for part in parts):
+                parts.append(f"{label} {rendered}")
+    return " · ".join(parts) or f"chunk {content_id}"
+
+
+def _nonempty_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _create_mcp_tool(

@@ -42,11 +42,16 @@ from data_intelligence_api.http.schemas.runtime_operations import (
     RuntimeInput,
     ThinkingExecutionRequest,
 )
+from data_intelligence_api.http.routers.runtime_operations import (
+    _completed_runtime_payload,
+)
 from data_intelligence_api.http.schemas.runtime_inputs import WorkflowRequest
 from data_intelligence_sdk.core.types import (
     FinalResponse,
     IntentAnalysis,
     PreparedMarkdownExecution,
+    SafeguardAssessment,
+    SafeguardFinding,
     SessionContext,
     UserInputOption,
     UserInputRequired,
@@ -167,6 +172,8 @@ class RuntimeOperationModelTests(unittest.TestCase):
                     "engine_name": "general",
                     "messages": [{"type": "human", "data": {"content": "Q"}}],
                     "pending_tool_call_id": "call-1",
+                    "pending_tool_name": "assess_answerability",
+                    "safeguard_required": True,
                 },
                 "selected_option_id": "method-a",
             }
@@ -201,6 +208,8 @@ class RuntimeOperationModelTests(unittest.TestCase):
                     "engine_name": "general",
                     "messages": [{"type": "human", "data": {"content": "Q"}}],
                     "pending_tool_call_id": "call-1",
+                    "pending_tool_name": "assess_answerability",
+                    "safeguard_required": True,
                 },
                 "selected_option_id": "method-a",
             }
@@ -208,6 +217,11 @@ class RuntimeOperationModelTests(unittest.TestCase):
 
         self.assertEqual(request.selected_option_id, "method-a")
         self.assertIsNone(request.other_text)
+        self.assertEqual(
+            request.continuation_state.pending_tool_name,
+            "assess_answerability",
+        )
+        self.assertTrue(request.continuation_state.safeguard_required)
 
     def test_resume_request_rejects_invalid_answer_or_continuation(self):
         base = {
@@ -810,6 +824,21 @@ class RuntimeReportStreamingAdapterTests(unittest.IsolatedAsyncioTestCase):
             reason="method_definition",
             options=[UserInputOption(id="method-a", label="Method A")],
             continuation_state={"version": 1, "secret": "runtime-only"},
+            safeguard_assessment=SafeguardAssessment(
+                decision="needs_user_input",
+                findings=[
+                    SafeguardFinding(
+                        id="missing-period",
+                        category="data_quality",
+                        severity="moderate",
+                        title="Missing period",
+                        detail="April is absent from the source.",
+                        impact="The monthly average may be understated.",
+                        affected_scope="April",
+                        evidence_refs=["source://ledger"],
+                    )
+                ],
+            ),
         )
         chunks = [
             chunk
@@ -823,6 +852,8 @@ class RuntimeReportStreamingAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(chunks), 1)
         self.assertIn("event: runtime.requires_user_input", chunks[0])
         self.assertIn('"secret":"runtime-only"', chunks[0])
+        self.assertIn('"safeguard_assessment"', chunks[0])
+        self.assertIn('"missing-period"', chunks[0])
         self.assertNotIn("runtime.completed", chunks[0])
 
     async def test_stream_report_events_maps_genreport_events_live(self):
@@ -1244,6 +1275,45 @@ class RuntimeOperationEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
 
+    async def test_completed_payload_rejects_citation_markers_without_sources(self):
+        result = FinalResponse(
+            answer="Revenue increased. [1](axiom-citation://ev-unresolved)",
+            metadata={
+                "citation_sources": [],
+                "uncited_claims": [],
+                "citation_status": "complete",
+            },
+        )
+
+        payload = _completed_runtime_payload(result)
+
+        self.assertEqual(payload["output_text"], result.answer)
+        self.assertEqual(payload["metadata"]["citation_sources"], [])
+        self.assertEqual(payload["metadata"]["citation_status"], "unavailable")
+
+    async def test_completed_payload_preserves_resolved_citation_metadata(self):
+        source = {
+            "id": "ev-source-1",
+            "source": "finance.pdf",
+            "locator": "page 4",
+            "excerpt": "Revenue increased.",
+            "document_id": "doc-1",
+            "content_id": "chunk-1",
+        }
+        result = FinalResponse(
+            answer="Revenue increased. [1](axiom-citation://ev-source-1)",
+            metadata={
+                "citation_sources": [source],
+                "uncited_claims": [],
+                "citation_status": "complete",
+            },
+        )
+
+        payload = _completed_runtime_payload(result)
+
+        self.assertEqual(payload["metadata"]["citation_sources"], [source])
+        self.assertEqual(payload["metadata"]["citation_status"], "complete")
+
     async def test_stateless_prepare_revise_and_execute_flow(self):
         prepare_payload = {
             **operation_payload(),
@@ -1381,6 +1451,50 @@ class RuntimeOperationEndpointTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(captured, ["Bearer user-token"])
+
+    async def test_instant_endpoint_streams_pipeline_runtime_events(self):
+        runtime_event = {
+            "event_id": "event-citation-started",
+            "run_id": "run-1",
+            "sequence": 1,
+            "phase": "engine",
+            "event_type": "engine.step",
+            "status": "running",
+            "name": "citation_attribution",
+            "description": "Linking sources…",
+            "artifact_refs": [],
+            "details": {},
+        }
+
+        def fake_stream(*args, logger=None, **kwargs):
+            del args, kwargs
+            logger.log("pipeline.runtime_event", runtime_event)
+            yield FinalResponse(answer="Revenue increased.")
+
+        with patch(
+            "data_intelligence_api.http.routers.runtime_operations.stream_instant",
+            side_effect=fake_stream,
+        ):
+            response = await self.client.post(
+                "/v1/execution:instant",
+                json={
+                    **operation_payload(),
+                    "operation_id": "op_instant_runtime_event",
+                    "runtime_input": {
+                        **runtime_input_payload(),
+                        "runtime_options": {"engine": "general"},
+                    },
+                },
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("event: pipeline.runtime_event", response.text)
+        self.assertIn('"name":"citation_attribution"', response.text)
+        self.assertLess(
+            response.text.index("event: pipeline.runtime_event"),
+            response.text.index("event: runtime.completed"),
+        )
 
     async def test_direct_report_execution_streams_without_confirmation(self):
         response = await self.client.post(

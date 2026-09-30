@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
+import threading
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import asdict
+from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -28,6 +31,7 @@ from data_intelligence_api.application.workflow import (
 )
 from data_intelligence_api.http.schemas.runtime_operations import (
     InstantExecutionRequest,
+    normalize_citation_metadata,
     OperationEnvelope,
     PrepareSpecRequest,
     ReviseSpecRequest,
@@ -39,15 +43,32 @@ from data_intelligence_api.http.streaming import chunk_text, encode_sse
 from data_intelligence_api.infrastructure.config.settings import ApiSettings
 from data_intelligence_sdk.core.errors import EngineSelectionError
 from data_intelligence_sdk.core.types import FinalResponse, UserInputRequired
+from data_intelligence_sdk.runtime.logger import ConsoleRuntimeLogger, RuntimeLogger
 
 logger = logging.getLogger(__name__)
 
 
+class _StreamingRuntimeLogger(RuntimeLogger):
+    def __init__(self) -> None:
+        self.events: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        self._loop = asyncio.get_running_loop()
+        self._console_logger = ConsoleRuntimeLogger()
+
+    def log(self, event: str, payload: dict[str, Any] | None = None) -> None:
+        self._console_logger.log(event, payload)
+        if event == "pipeline.runtime_event":
+            self.enqueue("runtime", payload or {})
+
+    def enqueue(self, kind: str, payload: Any) -> None:
+        self._loop.call_soon_threadsafe(self.events.put_nowait, (kind, payload))
+
+
 def _completed_runtime_payload(result: FinalResponse) -> dict[str, object]:
+    metadata = normalize_citation_metadata(dict(result.metadata), result.answer)
     return {
         "output_text": result.answer,
         "evidence": (asdict(result.evidence) if result.evidence is not None else None),
-        "metadata": dict(result.metadata),
+        "metadata": metadata,
     }
 
 
@@ -56,63 +77,108 @@ async def _stream_execution_events(
     *,
     operation_id: str,
     response_id: str,
+    runtime_logger: _StreamingRuntimeLogger | None = None,
 ) -> AsyncIterator[str]:
+    runtime_logger = runtime_logger or _StreamingRuntimeLogger()
     result: FinalResponse | None = None
     emitted_delta = False
-    for item in events:
-        if isinstance(item, str):
-            if not item:
+
+    stop_worker = threading.Event()
+
+    def produce_events() -> None:
+        try:
+            for item in events:
+                if stop_worker.is_set():
+                    break
+                runtime_logger.enqueue("execution", item)
+        except BaseException as error:
+            runtime_logger.enqueue("error", error)
+        finally:
+            runtime_logger.enqueue("finished", None)
+
+    worker = threading.Thread(target=produce_events, daemon=True)
+    worker.start()
+    try:
+        while True:
+            event_kind, event_payload = await runtime_logger.events.get()
+            if event_kind == "runtime":
+                runtime_event = {
+                    "type": "pipeline.runtime_event",
+                    "operation_id": operation_id,
+                    "response_id": response_id,
+                    "payload": event_payload,
+                }
+                yield encode_sse("pipeline.runtime_event", runtime_event)
                 continue
-            emitted_delta = True
-            yield encode_sse(
-                "runtime.output_text.delta",
-                {
-                    "type": "runtime.output_text.delta",
-                    "operation_id": operation_id,
-                    "response_id": response_id,
-                    "payload": {"delta": item},
-                },
-            )
-        elif isinstance(item, FinalResponse):
-            result = item
-        elif isinstance(item, UserInputRequired):
-            yield encode_sse(
-                "runtime.requires_user_input",
-                {
-                    "type": "runtime.requires_user_input",
-                    "operation_id": operation_id,
-                    "response_id": response_id,
-                    "payload": {
-                        "question": item.question,
-                        "reason": item.reason,
-                        "options": [asdict(option) for option in item.options],
-                        "continuation_state": item.continuation_state,
+            if event_kind == "error":
+                raise event_payload
+            if event_kind == "finished":
+                break
+            if event_kind != "execution":
+                continue
+
+            item = event_payload
+            if isinstance(item, str):
+                if not item:
+                    continue
+                emitted_delta = True
+                yield encode_sse(
+                    "runtime.output_text.delta",
+                    {
+                        "type": "runtime.output_text.delta",
+                        "operation_id": operation_id,
+                        "response_id": response_id,
+                        "payload": {"delta": item},
                     },
-                },
-            )
-            return
-    if result is None:
-        raise RuntimeError("Runtime stream returned no completed response.")
-    if not emitted_delta:
-        for delta in chunk_text(result.answer):
-            yield encode_sse(
-                "runtime.output_text.delta",
-                {
-                    "type": "runtime.output_text.delta",
-                    "operation_id": operation_id,
-                    "response_id": response_id,
-                    "payload": {"delta": delta},
-                },
-            )
-    yield encode_sse(
-        "runtime.completed",
-        {
-            "type": "runtime.completed",
-            "operation_id": operation_id,
-            "response_id": response_id,
-            "payload": _completed_runtime_payload(result),
-        },
-    )
+                )
+            elif isinstance(item, FinalResponse):
+                result = item
+            elif isinstance(item, UserInputRequired):
+                yield encode_sse(
+                    "runtime.requires_user_input",
+                    {
+                        "type": "runtime.requires_user_input",
+                        "operation_id": operation_id,
+                        "response_id": response_id,
+                        "payload": {
+                            "question": item.question,
+                            "reason": item.reason,
+                            "options": [asdict(option) for option in item.options],
+                            "safeguard_assessment": (
+                                asdict(item.safeguard_assessment)
+                                if item.safeguard_assessment is not None
+                                else None
+                            ),
+                            "continuation_state": item.continuation_state,
+                        },
+                    },
+                )
+                return
+
+        if result is None:
+            raise RuntimeError("Runtime stream returned no completed response.")
+        if not emitted_delta:
+            for delta in chunk_text(result.answer):
+                yield encode_sse(
+                    "runtime.output_text.delta",
+                    {
+                        "type": "runtime.output_text.delta",
+                        "operation_id": operation_id,
+                        "response_id": response_id,
+                        "payload": {"delta": delta},
+                    },
+                )
+        yield encode_sse(
+            "runtime.completed",
+            {
+                "type": "runtime.completed",
+                "operation_id": operation_id,
+                "response_id": response_id,
+                "payload": _completed_runtime_payload(result),
+            },
+        )
+    finally:
+        stop_worker.set()
 
 
 def _authorize_service(
@@ -231,6 +297,7 @@ def create_runtime_operations_router(
 
         async def event_stream() -> AsyncIterator[str]:
             selection = None
+            runtime_logger = _StreamingRuntimeLogger()
             try:
                 if pipeline_factory is default_pipeline_factory:
                     selection = select_thinking_engine(
@@ -266,9 +333,11 @@ def create_runtime_operations_router(
                         pipeline_factory=pipeline_factory,
                         selection=selection,
                         user_authorization=user_authorization,
+                        logger=runtime_logger,
                     ),
                     operation_id=request.operation_id,
                     response_id=request.response_id,
+                    runtime_logger=runtime_logger,
                 ):
                     yield runtime_event
             except Exception as exc:
@@ -316,6 +385,7 @@ def create_runtime_operations_router(
 
         async def event_stream() -> AsyncIterator[str]:
             selection = None
+            runtime_logger = _StreamingRuntimeLogger()
             if pipeline_factory is default_pipeline_factory:
                 try:
                     selection = select_instant_engine(
@@ -343,9 +413,11 @@ def create_runtime_operations_router(
                                 pipeline_factory=pipeline_factory,
                                 selection=selection,
                                 user_authorization=user_authorization,
+                                logger=runtime_logger,
                             ),
                             operation_id=request.operation_id,
                             response_id=request.response_id,
+                            runtime_logger=runtime_logger,
                         ):
                             yield runtime_event
                     else:
@@ -391,9 +463,11 @@ def create_runtime_operations_router(
                         settings=settings,
                         pipeline_factory=pipeline_factory,
                         user_authorization=user_authorization,
+                        logger=runtime_logger,
                     ),
                     operation_id=request.operation_id,
                     response_id=request.response_id,
+                    runtime_logger=runtime_logger,
                 ):
                     yield runtime_event
             except Exception as exc:
@@ -440,6 +514,7 @@ def create_runtime_operations_router(
         _authorize_service(settings, authorization, consumer_service)
 
         async def event_stream() -> AsyncIterator[str]:
+            runtime_logger = _StreamingRuntimeLogger()
             try:
                 async for runtime_event in _stream_execution_events(
                     resume_execution(
@@ -447,9 +522,11 @@ def create_runtime_operations_router(
                         settings=settings,
                         pipeline_factory=pipeline_factory,
                         user_authorization=user_authorization,
+                        logger=runtime_logger,
                     ),
                     operation_id=request.operation_id,
                     response_id=request.response_id,
+                    runtime_logger=runtime_logger,
                 ):
                     yield runtime_event
             except Exception:

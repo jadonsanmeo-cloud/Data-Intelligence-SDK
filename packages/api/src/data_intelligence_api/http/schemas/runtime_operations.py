@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from data_intelligence_api.http.schemas.runtime_inputs import (
     SelectedFilesRequest,
@@ -14,6 +22,90 @@ from data_intelligence_api.http.schemas.runtime_inputs import (
     RuntimeOptionsRequest,
     UploadedFileRequest,
 )
+
+
+class CitationSourcePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    source: str = Field(min_length=1, max_length=300)
+    locator: str = Field(min_length=1, max_length=500)
+    excerpt: str = Field(min_length=1, max_length=2000)
+    document_id: str | None = Field(default=None, max_length=256)
+    content_id: str | None = Field(default=None, max_length=256)
+
+
+class CitationMetadataPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    citation_sources: list[CitationSourcePayload] = Field(
+        default_factory=list, max_length=50
+    )
+    uncited_claims: list[str] = Field(default_factory=list, max_length=50)
+    citation_status: Literal["complete", "partial", "unavailable"]
+
+    @field_validator("uncited_claims")
+    @classmethod
+    def validate_uncited_claims(cls, values: list[str]) -> list[str]:
+        if any(not value.strip() or len(value) > 500 for value in values):
+            raise ValueError("uncited claims must contain 1 to 500 characters")
+        return values
+
+    @model_validator(mode="after")
+    def validate_source_coverage(self) -> "CitationMetadataPayload":
+        source_ids = [source.id for source in self.citation_sources]
+        if len(set(source_ids)) != len(source_ids):
+            raise ValueError("citation source IDs must be unique")
+        if self.citation_status == "complete" and (
+            not source_ids or self.uncited_claims
+        ):
+            raise ValueError("complete citation metadata must cover all claims")
+        if self.citation_status == "partial" and (
+            not source_ids or not self.uncited_claims
+        ):
+            raise ValueError("partial citation metadata needs cited and uncited claims")
+        if self.citation_status == "unavailable" and source_ids:
+            raise ValueError("unavailable citation metadata cannot include sources")
+        return self
+
+
+_CITATION_METADATA_KEYS = frozenset(
+    {"citation_sources", "uncited_claims", "citation_status"}
+)
+_CITATION_MARKER = re.compile(r"\[[^\]]+\]\(axiom-citation://([^\s)]+)\)")
+
+
+def normalize_citation_metadata(
+    metadata: dict[str, Any], answer: str
+) -> dict[str, Any]:
+    normalized = dict(metadata)
+    if not _CITATION_METADATA_KEYS.intersection(normalized):
+        return normalized
+
+    try:
+        citations = CitationMetadataPayload.model_validate(
+            {
+                key: normalized[key]
+                for key in _CITATION_METADATA_KEYS
+                if key in normalized
+            }
+        )
+        marker_ids = _CITATION_MARKER.findall(answer)
+        source_ids = [source.id for source in citations.citation_sources]
+        if answer.count("axiom-citation://") != len(marker_ids):
+            raise ValueError("answer contains a malformed citation marker")
+        if set(marker_ids) != set(source_ids):
+            raise ValueError("citation markers and sources do not match")
+    except (KeyError, TypeError, ValueError, ValidationError):
+        normalized.update(
+            citation_sources=[],
+            uncited_claims=[],
+            citation_status="unavailable",
+        )
+        return normalized
+
+    normalized.update(citations.model_dump(mode="json"))
+    return normalized
 
 
 class OperationEnvelope(BaseModel):
@@ -104,6 +196,8 @@ class AskUserContinuationRequest(BaseModel):
     engine_name: Literal["general"]
     messages: list[dict[str, Any]] = Field(min_length=1)
     pending_tool_call_id: str = Field(min_length=1, max_length=256)
+    pending_tool_name: Literal["ask_user", "assess_answerability"] = "ask_user"
+    safeguard_required: bool = False
 
 
 class ResumeExecutionRequest(OperationEnvelope):

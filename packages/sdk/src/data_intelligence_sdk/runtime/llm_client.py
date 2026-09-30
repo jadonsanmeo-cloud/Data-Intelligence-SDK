@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Protocol
@@ -20,10 +22,11 @@ from axiom_model_client import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     convert_to_openai_messages,
 )
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import PrivateAttr
 
@@ -567,6 +570,27 @@ class ModelServiceProfileLLMClient:
             self.context.to_model_context(), resolution.resolution_id, **payload
         )
 
+    def stream_messages(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        stage: str,
+        **options: Any,
+    ) -> Iterator[dict[str, Any]]:
+        """Stream a native chat request through the run's ``llm`` role."""
+
+        self._validate_stage(stage)
+        self._validate_options(options)
+        payload = {"messages": messages, "temperature": self.temperature, **options}
+        if self.model_resource_id is not None:
+            return self._model_client.stream_for_model(
+                self.context.to_model_context(), self.model_resource_id, **payload
+            )
+        resolution = self.resolve_roles(["llm"])[0]
+        return self._model_client.stream(
+            self.context.to_model_context(), resolution.resolution_id, **payload
+        )
+
     def embed(
         self,
         inputs: str | list[str],
@@ -670,6 +694,63 @@ class ModelServiceChatModel(BaseChatModel):
         tool_calls = _langchain_tool_calls(output.get("tool_calls"))
         message = AIMessage(content=content, tool_calls=tool_calls)
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        options = dict(kwargs)
+        if stop:
+            options["stop"] = stop
+        for event in self._profile_client.stream_messages(
+            convert_to_openai_messages(messages),
+            stage="chat.answer",
+            **options,
+        ):
+            event_type = event.get("type")
+            if event_type == "text.delta":
+                text = event.get("text")
+                if not isinstance(text, str) or not text:
+                    continue
+                chunk = ChatGenerationChunk(message=AIMessageChunk(content=text))
+                if run_manager is not None:
+                    run_manager.on_llm_new_token(text, chunk=chunk)
+                yield chunk
+            elif event_type == "tool_call.delta":
+                tool_call_chunk: dict[str, Any] = {
+                    "args": str(event.get("arguments") or ""),
+                    "type": "tool_call_chunk",
+                }
+                index = event.get("index")
+                if isinstance(index, int) and not isinstance(index, bool):
+                    tool_call_chunk["index"] = index
+                call_id = event.get("call_id")
+                if isinstance(call_id, str) and call_id:
+                    tool_call_chunk["id"] = call_id
+                name = event.get("name")
+                if isinstance(name, str) and name:
+                    tool_call_chunk["name"] = name
+                chunk = ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content="",
+                        tool_call_chunks=[tool_call_chunk],
+                    )
+                )
+                if run_manager is not None:
+                    run_manager.on_llm_new_token(chunk.text, chunk=chunk)
+                yield chunk
+            elif event_type == "response.failed":
+                code = event.get("code")
+                safe_code = (
+                    code
+                    if isinstance(code, str)
+                    and re.fullmatch(r"[A-Za-z0-9_]{1,80}", code)
+                    else "unknown_error"
+                )
+                raise RuntimeError(f"Model Service chat stream failed ({safe_code}).")
 
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):
         bound = {

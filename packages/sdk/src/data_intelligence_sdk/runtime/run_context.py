@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
+from uuid import uuid4
 
 from axiom_model_client import (
     ConsumerModelResolution,
@@ -15,11 +16,13 @@ from axiom_model_client import (
 )
 
 from data_intelligence_sdk.core.types import (
+    CitationEvidence,
     EngineOutput,
     EngineStep,
     EngineTrace,
     EvidenceBundle,
     MethodCall,
+    SafeguardAssessment,
     TraceStatus,
 )
 
@@ -203,6 +206,62 @@ class EngineRunContext:
     ) -> None:
         self.trace = EngineTrace()
         self._event_recorder = event_recorder
+        self.data_accessed = False
+        self.safeguard_assessment: SafeguardAssessment | None = None
+        self._citation_evidence: dict[tuple[str, str], CitationEvidence] = {}
+
+    def mark_data_access(self) -> None:
+        """Require a fresh assessment after another data-backed operation."""
+
+        self.data_accessed = True
+        self.safeguard_assessment = None
+
+    def require_data_access_allowed(self) -> None:
+        assessment = self.safeguard_assessment
+        if assessment is not None and assessment.decision != "clear":
+            raise PermissionError(
+                "Data access is blocked by the pending safeguard assessment."
+            )
+
+    def set_safeguard_assessment(self, assessment: SafeguardAssessment) -> None:
+        self.safeguard_assessment = assessment
+
+    @property
+    def citation_evidence(self) -> tuple[CitationEvidence, ...]:
+        return tuple(self._citation_evidence.values())
+
+    def register_citation_evidence(
+        self,
+        *,
+        source: str,
+        locator: str,
+        excerpt: str,
+        document_id: str,
+        content_id: str,
+    ) -> CitationEvidence | None:
+        normalized_document_id = document_id.strip()
+        normalized_content_id = content_id.strip()
+        normalized_excerpt = excerpt.strip()
+        if (
+            not normalized_document_id
+            or not normalized_content_id
+            or not normalized_excerpt
+        ):
+            return None
+        identity = (normalized_document_id, normalized_content_id)
+        existing = self._citation_evidence.get(identity)
+        if existing is not None:
+            return existing
+        evidence = CitationEvidence(
+            id=f"ev-{uuid4().hex}",
+            source=source.strip()[:300] or normalized_document_id,
+            locator=locator.strip()[:500] or "retrieved content",
+            excerpt=normalized_excerpt[:2000],
+            document_id=normalized_document_id,
+            content_id=normalized_content_id,
+        )
+        self._citation_evidence[identity] = evidence
+        return evidence
 
     def _record_event(
         self,

@@ -22,7 +22,21 @@ SUPPORTED_INTENTS: tuple[Intent, ...] = (
 )
 TraceStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 MethodStatus = Literal["draft", "experimental", "stable", "deprecated"]
-UserInputReason = Literal["ambiguous_query", "method_definition"]
+UserInputReason = Literal[
+    "ambiguous_query",
+    "method_definition",
+    "data_quality_issue",
+    "source_conflict",
+    "insufficient_evidence",
+]
+SafeguardDecision = Literal["clear", "needs_user_input", "blocked", "abstained"]
+SafeguardCategory = Literal[
+    "data_quality",
+    "connection_risk",
+    "source_conflict",
+    "insufficient_evidence",
+]
+SafeguardSeverity = Literal["info", "low", "moderate", "high", "critical", "unknown"]
 TrustLevel = Literal[
     "builtin",
     "user_approved",
@@ -241,6 +255,36 @@ class UserInputRequired:
     reason: UserInputReason
     options: list[UserInputOption]
     continuation_state: dict[str, Any]
+    safeguard_assessment: SafeguardAssessment | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SafeguardFinding:
+    id: str
+    category: SafeguardCategory
+    severity: SafeguardSeverity
+    title: str
+    detail: str
+    impact: str | None = None
+    affected_scope: str | None = None
+    evidence_refs: list[str] = field(default_factory=list)
+    blocking: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SafeguardAssessment:
+    decision: SafeguardDecision
+    findings: list[SafeguardFinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class CitationEvidence:
+    id: str
+    source: str
+    locator: str
+    excerpt: str
+    document_id: str
+    content_id: str
 
 
 @dataclass(slots=True)

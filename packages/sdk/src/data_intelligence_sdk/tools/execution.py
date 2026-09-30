@@ -49,6 +49,8 @@ def create_execute_python_tool(runtime: EngineRuntimeContext) -> BaseTool:
 
         if runtime.sandbox is None or runtime.run_artifact is None:
             raise RuntimeError("The request sandbox or run artifact is unavailable.")
+        runtime.run_context.require_data_access_allowed()
+        runtime.run_context.mark_data_access()
         try:
             observation = runtime.sandbox.execute_python(
                 code,
