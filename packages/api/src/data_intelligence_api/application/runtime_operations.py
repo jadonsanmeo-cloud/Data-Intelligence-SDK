@@ -596,9 +596,7 @@ def resume_execution(
         )
         return
 
-    runtime_request = ThinkingExecutionRequest.model_validate(
-        runtime_request_payload
-    )
+    runtime_request = ThinkingExecutionRequest.model_validate(runtime_request_payload)
     selection = select_thinking_engine(
         runtime_request,
         settings=settings,

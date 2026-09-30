@@ -106,9 +106,10 @@ def test_general_agent_stream_pauses_at_ask_user_result() -> None:
         def stream(self, payload, *, stream_mode):
             yield "values", {"messages": [tool_call, tool_result]}
             yield "messages", (AIMessage(content="This must not be emitted."), {})
-            yield "values", {
-                "messages": [tool_call, tool_result, AIMessage(content="Finished.")]
-            }
+            yield (
+                "values",
+                {"messages": [tool_call, tool_result, AIMessage(content="Finished.")]},
+            )
 
     events = list(
         GeneralPurposeEngine(llm=object())._stream_agent_attempt(
@@ -150,9 +151,10 @@ def test_general_engine_resume_replaces_only_pending_tool_result() -> None:
     class FakeAgent:
         def stream(self, payload, *, stream_mode):
             captured["messages"] = payload["messages"]
-            yield "values", {
-                "messages": [*payload["messages"], AIMessage(content="Done.")]
-            }
+            yield (
+                "values",
+                {"messages": [*payload["messages"], AIMessage(content="Done.")]},
+            )
 
     engine = GeneralPurposeEngine(llm=object())
     engine._build_agent = lambda _input: FakeAgent()
@@ -175,9 +177,16 @@ def test_general_engine_resume_replaces_only_pending_tool_result() -> None:
     )
     assert resumed_tool_result.tool_call_id == "call-1"
     assert '"selected_option_id": "method-a"' in resumed_tool_result.content
-    assert len(
-        [message for message in captured["messages"] if isinstance(message, ToolMessage)]
-    ) == 1
+    assert (
+        len(
+            [
+                message
+                for message in captured["messages"]
+                if isinstance(message, ToolMessage)
+            ]
+        )
+        == 1
+    )
     assert result[-1].result == "Done."
 
 
@@ -209,7 +218,9 @@ def test_general_agent_registers_ask_user_tool(monkeypatch) -> None:
     assert "ask_user" in {tool.name for tool in captured["tools"]}
 
 
-def test_general_engine_prompt_requires_clarification_without_trusting_documents() -> None:
+def test_general_engine_prompt_requires_clarification_without_trusting_documents() -> (
+    None
+):
     prompt = GeneralPurposeEngine(llm=object())._system_prompt(
         ExecutionSpec(intent="general", objective="Select the right method."),
         EngineRuntimeContext(),

@@ -86,7 +86,9 @@ def create_ask_user_tool() -> BaseTool:
                 "type": "axiom.ask_user.v1",
                 "question": request.question,
                 "reason": request.reason,
-                "options": [option.model_dump(mode="json") for option in request.options],
+                "options": [
+                    option.model_dump(mode="json") for option in request.options
+                ],
             },
             ensure_ascii=False,
         )

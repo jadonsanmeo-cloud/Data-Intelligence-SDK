@@ -186,7 +186,9 @@ class RuntimeOperationModelTests(unittest.TestCase):
                 list(resume_execution(request, settings=SimpleNamespace())), []
             )
 
-        self.assertIsInstance(stream_instant_mock.call_args.args[0], InstantExecutionRequest)
+        self.assertIsInstance(
+            stream_instant_mock.call_args.args[0], InstantExecutionRequest
+        )
 
     def test_resume_request_accepts_one_valid_answer_and_versioned_continuation(self):
         request = ResumeExecutionRequest.model_validate(
@@ -1314,7 +1316,7 @@ class RuntimeOperationEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("response.requires_confirmation", response.text)
 
     async def test_resume_endpoint_streams_the_resumed_execution(self):
-        interruption = UserInputRequired(
+        UserInputRequired(
             question="Which method should I use?",
             reason="method_definition",
             options=[UserInputOption(id="method-a", label="Method A")],
