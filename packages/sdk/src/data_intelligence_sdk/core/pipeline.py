@@ -894,13 +894,6 @@ class DataIntelligencePipeline:
                             if item:
                                 yield item
                         elif isinstance(item, UserInputRequired):
-                            if run_artifact is not None:
-                                run_artifact.finalize(
-                                    status="awaiting_user_input",
-                                    engine_name=getattr(
-                                        engine, "name", type(engine).__name__
-                                    ),
-                                )
                             yield item
                             return
                         elif isinstance(item, EngineOutput):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from data_intelligence_sdk.core.pipeline import DataIntelligencePipeline
 from data_intelligence_sdk.core.types import (
     EngineInput,
@@ -203,7 +205,9 @@ def test_standalone_stream_execution_creates_a_run_artifact(tmp_path) -> None:
     assert responses[-1].metadata["engine_name"] == "general"
 
 
-def test_pipeline_stream_yields_user_input_required_without_finalizing() -> None:
+def test_pipeline_stream_yields_user_input_required_without_finalizing(
+    tmp_path,
+) -> None:
     interruption = UserInputRequired(
         question="Which method should I use?",
         reason="method_definition",
@@ -220,11 +224,13 @@ def test_pipeline_stream_yields_user_input_required_without_finalizing() -> None
 
     registry = InMemoryEngineRegistry()
     registry.register(InterruptingEngine())
+    artifact_store = FilesystemArtifactStore(tmp_path)
     pipeline = DataIntelligencePipeline(
         intent_analyzer=object(),
         spec_builder=object(),
         spec_confirmation=object(),
         engine_registry=registry,
+        artifact_store=artifact_store,
     )
     spec = ExecutionSpec(
         intent="general",
@@ -241,3 +247,18 @@ def test_pipeline_stream_yields_user_input_required_without_finalizing() -> None
     events = list(pipeline.stream_confirmed_spec(prepared, spec))
 
     assert events == ["partial output", interruption]
+    assert prepared.run_artifact is not None
+    manifest = json.loads(prepared.run_artifact.manifest_path.read_text())
+    assert manifest["status"] == "running"
+
+    recorded_events = [
+        json.loads(line)
+        for line in prepared.run_artifact.events_path.read_text().splitlines()
+    ]
+    assert not any(
+        event["event_type"] in {"run.completed", "run.failed"}
+        for event in recorded_events
+    )
+
+    reopened_artifact = artifact_store.open_run(prepared.run_artifact.run_id)
+    reopened_artifact.finalize(status="completed", engine_name="general")
