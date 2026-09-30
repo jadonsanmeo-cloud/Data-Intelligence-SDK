@@ -20,7 +20,9 @@ from data_intelligence_sdk.core.types import (
     PreparedMarkdownExecution,
     PreprocessingStep,
     SessionContext,
+    UserInputAnswer,
     UserContext,
+    UserInputRequired,
     UserQuery,
 )
 from data_intelligence_sdk.runtime.engine_runtime import EngineRuntimeContext
@@ -776,12 +778,18 @@ class DataIntelligencePipeline:
         *,
         memory_context: MemoryContext | None = None,
         selection: SelectedEngine | None = None,
-    ) -> Iterator[str | FinalResponse]:
+        continuation_state: dict[str, Any] | None = None,
+        user_input_answer: UserInputAnswer | None = None,
+    ) -> Iterator[str | FinalResponse | UserInputRequired]:
         """Stream engine text and yield the completed response last."""
 
         if not confirmed_spec.confirmed:
             raise ValueError(
                 "Execution spec must be confirmed before engine selection."
+            )
+        if (continuation_state is None) != (user_input_answer is None):
+            raise ValueError(
+                "continuation state and user input answer must be provided together"
             )
         run_artifact = self._ensure_run_artifact(prepared)
         self._record_artifact_event(
@@ -867,11 +875,34 @@ class DataIntelligencePipeline:
                 )
                 output: EngineOutput | None = None
                 stream = getattr(engine, "stream", None)
-                if callable(stream):
-                    for item in stream(engine_input):
+                if continuation_state is not None:
+                    stream_resume = getattr(engine, "stream_resume", None)
+                    if not callable(stream_resume):
+                        raise ValueError(
+                            "The selected engine cannot resume user input."
+                        )
+                    engine_stream = stream_resume(
+                        engine_input,
+                        continuation_state,
+                        user_input_answer,
+                    )
+                else:
+                    engine_stream = stream(engine_input) if callable(stream) else None
+                if engine_stream is not None:
+                    for item in engine_stream:
                         if isinstance(item, str):
                             if item:
                                 yield item
+                        elif isinstance(item, UserInputRequired):
+                            if run_artifact is not None:
+                                run_artifact.finalize(
+                                    status="awaiting_user_input",
+                                    engine_name=getattr(
+                                        engine, "name", type(engine).__name__
+                                    ),
+                                )
+                            yield item
+                            return
                         elif isinstance(item, EngineOutput):
                             output = item
                 else:

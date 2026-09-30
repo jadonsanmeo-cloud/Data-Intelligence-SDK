@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from data_intelligence_api.http.schemas.runtime_inputs import (
     SelectedFilesRequest,
@@ -95,6 +95,52 @@ class InstantExecutionRequest(OperationEnvelope):
     runtime_input: RuntimeInput
     memory_scope: dict[str, Any] | None = None
     memory_context: dict[str, Any] | None = None
+
+
+class AskUserContinuationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1]
+    engine_name: Literal["general"]
+    messages: list[dict[str, Any]] = Field(min_length=1)
+    pending_tool_call_id: str = Field(min_length=1, max_length=256)
+
+
+class ResumeExecutionRequest(OperationEnvelope):
+    execution_mode: Literal["instant", "thinking"]
+    runtime_input: RuntimeInput
+    prepared_execution: dict[str, Any] | None = None
+    spec_markdown: str | None = Field(default=None, min_length=1)
+    continuation_state: AskUserContinuationRequest
+    selected_option_id: str | None = Field(default=None, min_length=1, max_length=128)
+    other_text: str | None = Field(default=None, min_length=1, max_length=2000)
+    memory_scope: dict[str, Any] | None = None
+    memory_context: dict[str, Any] | None = None
+
+    @field_validator("selected_option_id", "other_text")
+    @classmethod
+    def strip_answer(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("user input answer must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_resume_context(self) -> ResumeExecutionRequest:
+        has_option = self.selected_option_id is not None
+        has_other = self.other_text is not None
+        if has_option == has_other:
+            raise ValueError("provide exactly one selected option or other text")
+        if self.execution_mode == "thinking":
+            if self.prepared_execution is None or self.spec_markdown is None:
+                raise ValueError(
+                    "thinking resume requires prepared_execution and spec_markdown"
+                )
+        elif self.prepared_execution is not None or self.spec_markdown is not None:
+            raise ValueError("instant resume cannot include thinking execution data")
+        return self
 
 
 class RuntimeErrorResponse(BaseModel):

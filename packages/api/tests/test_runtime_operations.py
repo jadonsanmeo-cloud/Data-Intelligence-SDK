@@ -15,6 +15,7 @@ from data_intelligence_api.application.runtime_operations import (
     execute_thinking,
     prepare_spec,
     revise_spec,
+    resume_execution,
     stream_report_events,
 )
 from data_intelligence_api.application.workflow import (
@@ -37,6 +38,7 @@ from data_intelligence_api.http.schemas.runtime_operations import (
     InstantExecutionRequest,
     PrepareSpecRequest,
     ReviseSpecRequest,
+    ResumeExecutionRequest,
     RuntimeInput,
     ThinkingExecutionRequest,
 )
@@ -46,6 +48,8 @@ from data_intelligence_sdk.core.types import (
     IntentAnalysis,
     PreparedMarkdownExecution,
     SessionContext,
+    UserInputOption,
+    UserInputRequired,
     UserContext,
     UserQuery,
 )
@@ -152,6 +156,82 @@ def execution_context_payload() -> dict:
 
 
 class RuntimeOperationModelTests(unittest.TestCase):
+    def test_instant_resume_does_not_pass_thinking_fields_to_instant_request(self):
+        request = ResumeExecutionRequest.model_validate(
+            {
+                **operation_payload(),
+                "execution_mode": "instant",
+                "runtime_input": runtime_input_payload(),
+                "continuation_state": {
+                    "version": 1,
+                    "engine_name": "general",
+                    "messages": [{"type": "human", "data": {"content": "Q"}}],
+                    "pending_tool_call_id": "call-1",
+                },
+                "selected_option_id": "method-a",
+            }
+        )
+
+        with (
+            patch(
+                "data_intelligence_api.application.runtime_operations.select_instant_engine",
+                return_value=SimpleNamespace(engine=SimpleNamespace(name="general")),
+            ),
+            patch(
+                "data_intelligence_api.application.runtime_operations.stream_instant",
+                return_value=iter(()),
+            ) as stream_instant_mock,
+        ):
+            self.assertEqual(
+                list(resume_execution(request, settings=SimpleNamespace())), []
+            )
+
+        self.assertIsInstance(stream_instant_mock.call_args.args[0], InstantExecutionRequest)
+
+    def test_resume_request_accepts_one_valid_answer_and_versioned_continuation(self):
+        request = ResumeExecutionRequest.model_validate(
+            {
+                **operation_payload(),
+                "execution_mode": "instant",
+                "runtime_input": runtime_input_payload(),
+                "continuation_state": {
+                    "version": 1,
+                    "engine_name": "general",
+                    "messages": [{"type": "human", "data": {"content": "Q"}}],
+                    "pending_tool_call_id": "call-1",
+                },
+                "selected_option_id": "method-a",
+            }
+        )
+
+        self.assertEqual(request.selected_option_id, "method-a")
+        self.assertIsNone(request.other_text)
+
+    def test_resume_request_rejects_invalid_answer_or_continuation(self):
+        base = {
+            **operation_payload(),
+            "execution_mode": "instant",
+            "runtime_input": runtime_input_payload(),
+            "continuation_state": {
+                "version": 1,
+                "engine_name": "general",
+                "messages": [{"type": "human", "data": {"content": "Q"}}],
+                "pending_tool_call_id": "call-1",
+            },
+        }
+
+        for invalid in (
+            base,
+            {**base, "selected_option_id": "method-a", "other_text": "Other"},
+            {
+                **base,
+                "continuation_state": {**base["continuation_state"], "version": 2},
+                "selected_option_id": "method-a",
+            },
+        ):
+            with self.assertRaises(ValidationError):
+                ResumeExecutionRequest.model_validate(invalid)
+
     def test_runtime_input_exposes_explicit_workspace_discovery_policy(self):
         self.assertIn("discover_workspace_files", RuntimeInput.model_fields)
 
@@ -718,6 +798,31 @@ class RuntimeDeploymentTests(unittest.TestCase):
 
 
 class RuntimeReportStreamingAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_runtime_sse_ends_with_user_input_required(self):
+        from data_intelligence_api.http.routers.runtime_operations import (
+            _stream_execution_events,
+        )
+
+        interruption = UserInputRequired(
+            question="Which method should I use?",
+            reason="method_definition",
+            options=[UserInputOption(id="method-a", label="Method A")],
+            continuation_state={"version": 1, "secret": "runtime-only"},
+        )
+        chunks = [
+            chunk
+            async for chunk in _stream_execution_events(
+                iter([interruption]),
+                operation_id="op-input",
+                response_id="resp-input",
+            )
+        ]
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("event: runtime.requires_user_input", chunks[0])
+        self.assertIn('"secret":"runtime-only"', chunks[0])
+        self.assertNotIn("runtime.completed", chunks[0])
+
     async def test_stream_report_events_maps_genreport_events_live(self):
         captured: dict = {}
 
@@ -1207,6 +1312,40 @@ class RuntimeOperationEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: runtime.completed", response.text)
         self.assertNotIn("response.requires_confirmation", response.text)
+
+    async def test_resume_endpoint_streams_the_resumed_execution(self):
+        interruption = UserInputRequired(
+            question="Which method should I use?",
+            reason="method_definition",
+            options=[UserInputOption(id="method-a", label="Method A")],
+            continuation_state={"version": 1},
+        )
+        payload = {
+            **operation_payload(),
+            "execution_mode": "instant",
+            "runtime_input": runtime_input_payload(),
+            "continuation_state": {
+                "version": 1,
+                "engine_name": "general",
+                "messages": [{"type": "human", "data": {"content": "Q"}}],
+                "pending_tool_call_id": "call-1",
+            },
+            "selected_option_id": "method-a",
+        }
+
+        with patch(
+            "data_intelligence_api.http.routers.runtime_operations.resume_execution",
+            return_value=iter([FinalResponse(answer="Resumed answer")]),
+        ) as resume:
+            response = await self.client.post(
+                "/v1/execution:resume",
+                json=payload,
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("event: runtime.completed", response.text)
+        resume.assert_called_once()
 
     async def test_instant_endpoint_forwards_user_authorization_to_general_runtime(
         self,

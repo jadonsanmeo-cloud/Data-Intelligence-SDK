@@ -15,6 +15,7 @@ from data_intelligence_api.application.runtime_operations import (
     execute_thinking,  # noqa: F401 - retained for downstream patch compatibility
     prepare_spec,
     revise_spec,
+    resume_execution,
     select_instant_engine,
     select_thinking_engine,
     stream_instant,
@@ -31,12 +32,13 @@ from data_intelligence_api.http.schemas.runtime_operations import (
     PrepareSpecRequest,
     ReviseSpecRequest,
     RuntimeErrorResponse,
+    ResumeExecutionRequest,
     ThinkingExecutionRequest,
 )
 from data_intelligence_api.http.streaming import chunk_text, encode_sse
 from data_intelligence_api.infrastructure.config.settings import ApiSettings
 from data_intelligence_sdk.core.errors import EngineSelectionError
-from data_intelligence_sdk.core.types import FinalResponse
+from data_intelligence_sdk.core.types import FinalResponse, UserInputRequired
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ def _completed_runtime_payload(result: FinalResponse) -> dict[str, object]:
 
 
 async def _stream_execution_events(
-    events: Iterator[str | FinalResponse],
+    events: Iterator[str | FinalResponse | UserInputRequired],
     *,
     operation_id: str,
     response_id: str,
@@ -73,6 +75,22 @@ async def _stream_execution_events(
             )
         elif isinstance(item, FinalResponse):
             result = item
+        elif isinstance(item, UserInputRequired):
+            yield encode_sse(
+                "runtime.requires_user_input",
+                {
+                    "type": "runtime.requires_user_input",
+                    "operation_id": operation_id,
+                    "response_id": response_id,
+                    "payload": {
+                        "question": item.question,
+                        "reason": item.reason,
+                        "options": [asdict(option) for option in item.options],
+                        "continuation_state": item.continuation_state,
+                    },
+                },
+            )
+            return
     if result is None:
         raise RuntimeError("Runtime stream returned no completed response.")
     if not emitted_delta:
@@ -406,6 +424,53 @@ def create_runtime_operations_router(
                     },
                 )
                 return
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    @router.post("/v1/execution:resume")
+    async def stream_runtime_resume(
+        request: ResumeExecutionRequest,
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        consumer_service: str | None = Header(default=None, alias="X-Consumer-Service"),
+        user_authorization: str | None = Header(
+            default=None,
+            alias="X-Axiom-User-Authorization",
+        ),
+    ) -> StreamingResponse:
+        _authorize_service(settings, authorization, consumer_service)
+
+        async def event_stream() -> AsyncIterator[str]:
+            try:
+                async for runtime_event in _stream_execution_events(
+                    resume_execution(
+                        request,
+                        settings=settings,
+                        pipeline_factory=pipeline_factory,
+                        user_authorization=user_authorization,
+                    ),
+                    operation_id=request.operation_id,
+                    response_id=request.response_id,
+                ):
+                    yield runtime_event
+            except Exception:
+                logger.exception(
+                    "Runtime resume failed operation_id=%s response_id=%s",
+                    request.operation_id,
+                    request.response_id,
+                )
+                yield encode_sse(
+                    "runtime.failed",
+                    {
+                        "type": "runtime.failed",
+                        "operation_id": request.operation_id,
+                        "response_id": request.response_id,
+                        "payload": {
+                            "code": "resume_failed",
+                            "message": "The runtime could not resume this response.",
+                            "retryable": True,
+                        },
+                    },
+                )
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 

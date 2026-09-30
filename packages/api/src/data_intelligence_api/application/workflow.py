@@ -20,7 +20,9 @@ from data_intelligence_sdk.core.types import (
     PreparedMarkdownExecution,
     PreprocessingStep,
     SessionContext,
+    UserInputAnswer,
     UploadedFile,
+    UserInputRequired,
     UserContext,
     UserQuery,
 )
@@ -429,8 +431,10 @@ def stream_prepared_markdown_workflow(
     pipeline_factory: PipelineFactory = default_pipeline_factory,
     memory_context: MemoryContext | None = None,
     selection: SelectedEngine | None = None,
+    continuation_state: dict[str, Any] | None = None,
+    user_input_answer: UserInputAnswer | None = None,
     **runtime_context: Any,
-) -> Iterator[str | FinalResponse]:
+) -> Iterator[str | FinalResponse | UserInputRequired]:
     """Stream a confirmed Markdown execution through the selected engine."""
 
     pipeline = _create_pipeline(
@@ -449,6 +453,8 @@ def stream_prepared_markdown_workflow(
             spec,
             memory_context=memory_context,
             selection=selection,
+            continuation_state=continuation_state,
+            user_input_answer=user_input_answer,
         )
     else:
         yield pipeline.execute_confirmed_spec(
@@ -553,8 +559,10 @@ def stream_instant_workflow(
     logger: RuntimeLogger,
     pipeline_factory: PipelineFactory = default_pipeline_factory,
     selection: SelectedEngine | None = None,
+    continuation_state: dict[str, Any] | None = None,
+    user_input_answer: UserInputAnswer | None = None,
     **runtime_context: Any,
-) -> Iterator[str | FinalResponse]:
+) -> Iterator[str | FinalResponse | UserInputRequired]:
     """Stream an Instant request through the selected engine."""
 
     pipeline = _create_pipeline(
@@ -584,6 +592,8 @@ def stream_instant_workflow(
             spec,
             memory_context=invocation.memory_context,
             selection=selection,
+            continuation_state=continuation_state,
+            user_input_answer=user_input_answer,
         )
     else:
         yield pipeline.execute_confirmed_spec(

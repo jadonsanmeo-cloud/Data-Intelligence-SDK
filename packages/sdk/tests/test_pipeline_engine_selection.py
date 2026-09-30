@@ -7,6 +7,8 @@ from data_intelligence_sdk.core.types import (
     ExecutionSpec,
     PreparedExecution,
     SessionContext,
+    UserInputOption,
+    UserInputRequired,
     UserQuery,
 )
 from data_intelligence_sdk.memory import MemoryContext
@@ -199,3 +201,43 @@ def test_standalone_stream_execution_creates_a_run_artifact(tmp_path) -> None:
 
     assert prepared.run_artifact is not None
     assert responses[-1].metadata["engine_name"] == "general"
+
+
+def test_pipeline_stream_yields_user_input_required_without_finalizing() -> None:
+    interruption = UserInputRequired(
+        question="Which method should I use?",
+        reason="method_definition",
+        options=[UserInputOption(id="method-a", label="Method A")],
+        continuation_state={"version": 1},
+    )
+
+    class InterruptingEngine(_GeneralEngine):
+        def stream(self, input: EngineInput):
+            del input
+            yield "partial output"
+            yield interruption
+            yield "must not be emitted"
+
+    registry = InMemoryEngineRegistry()
+    registry.register(InterruptingEngine())
+    pipeline = DataIntelligencePipeline(
+        intent_analyzer=object(),
+        spec_builder=object(),
+        spec_confirmation=object(),
+        engine_registry=registry,
+    )
+    spec = ExecutionSpec(
+        intent="general",
+        objective="Choose a method.",
+        confirmed=True,
+        engine_hint="general",
+    )
+    prepared = PreparedExecution(
+        query=UserQuery(text="Choose a method."),
+        intent="general",
+        spec=spec,
+    )
+
+    events = list(pipeline.stream_confirmed_spec(prepared, spec))
+
+    assert events == ["partial output", interruption]

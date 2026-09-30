@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
-from data_intelligence_sdk.core.types import FinalResponse
+from data_intelligence_sdk.core.types import (
+    FinalResponse,
+    UserInputAnswer,
+    UserInputRequired,
+)
 from data_intelligence_sdk.registry.engine_registry import SelectedEngine
 from data_intelligence_sdk.runtime.logger import ConsoleRuntimeLogger, RuntimeLogger
 
@@ -35,6 +39,7 @@ from data_intelligence_api.http.schemas.runtime_operations import (
     ReviseSpecRequest,
     ReviseSpecResponse,
     RuntimeInput,
+    ResumeExecutionRequest,
     ThinkingExecutionRequest,
 )
 from data_intelligence_api.infrastructure.memory import parse_upstream_memory_context
@@ -331,7 +336,9 @@ def stream_thinking(
     logger: RuntimeLogger | None = None,
     selection: SelectedEngine | None = None,
     user_authorization: str | None = None,
-) -> Iterator[str | FinalResponse]:
+    continuation_state: dict[str, Any] | None = None,
+    user_input_answer: UserInputAnswer | None = None,
+) -> Iterator[str | FinalResponse | UserInputRequired]:
     """Stream a confirmed Thinking execution from the runtime engine."""
 
     prepared = prepared_markdown_from_payload(
@@ -382,6 +389,8 @@ def stream_thinking(
         memory_context=parse_upstream_memory_context(request.memory_context),
         selection=selection,
         user_authorization=user_authorization,
+        continuation_state=continuation_state,
+        user_input_answer=user_input_answer,
     )
 
 
@@ -492,7 +501,9 @@ def stream_instant(
     logger: RuntimeLogger | None = None,
     selection: SelectedEngine | None = None,
     user_authorization: str | None = None,
-) -> Iterator[str | FinalResponse]:
+    continuation_state: dict[str, Any] | None = None,
+    user_input_answer: UserInputAnswer | None = None,
+) -> Iterator[str | FinalResponse | UserInputRequired]:
     """Stream an Instant execution from the runtime engine."""
 
     invocation = build_workflow_invocation(
@@ -530,6 +541,81 @@ def stream_instant(
         gen_report_base_url=getattr(settings, "gen_report_api_url", None),
         gen_report_public_url=getattr(settings, "gen_report_public_url", None),
         user_authorization=user_authorization,
+        continuation_state=continuation_state,
+        user_input_answer=user_input_answer,
+    )
+
+
+def resume_execution(
+    request: ResumeExecutionRequest,
+    *,
+    settings: object,
+    pipeline_factory: PipelineFactory = default_pipeline_factory,
+    logger: RuntimeLogger | None = None,
+    user_authorization: str | None = None,
+) -> Iterator[str | FinalResponse | UserInputRequired]:
+    continuation_state = request.continuation_state.model_dump(mode="json")
+    answer = UserInputAnswer(
+        selected_option_id=request.selected_option_id,
+        other_text=request.other_text,
+    )
+    excluded_fields = {
+        "execution_mode",
+        "continuation_state",
+        "selected_option_id",
+        "other_text",
+    }
+    if request.execution_mode == "instant":
+        excluded_fields.update({"prepared_execution", "spec_markdown"})
+    runtime_request_payload = request.model_dump(
+        mode="python",
+        exclude=excluded_fields,
+    )
+
+    if request.execution_mode == "instant":
+        runtime_request = InstantExecutionRequest.model_validate(
+            runtime_request_payload
+        )
+        selection = select_instant_engine(
+            runtime_request,
+            settings=settings,
+            pipeline_factory=pipeline_factory,
+            logger=logger,
+        )
+        if selection.engine.name != continuation_state["engine_name"]:
+            raise ValueError("The saved user-input engine no longer matches routing.")
+        yield from stream_instant(
+            runtime_request,
+            settings=settings,
+            pipeline_factory=pipeline_factory,
+            logger=logger,
+            selection=selection,
+            user_authorization=user_authorization,
+            continuation_state=continuation_state,
+            user_input_answer=answer,
+        )
+        return
+
+    runtime_request = ThinkingExecutionRequest.model_validate(
+        runtime_request_payload
+    )
+    selection = select_thinking_engine(
+        runtime_request,
+        settings=settings,
+        pipeline_factory=pipeline_factory,
+        logger=logger,
+    )
+    if selection.engine.name != continuation_state["engine_name"]:
+        raise ValueError("The saved user-input engine no longer matches routing.")
+    yield from stream_thinking(
+        runtime_request,
+        settings=settings,
+        pipeline_factory=pipeline_factory,
+        logger=logger,
+        selection=selection,
+        user_authorization=user_authorization,
+        continuation_state=continuation_state,
+        user_input_answer=answer,
     )
 
 

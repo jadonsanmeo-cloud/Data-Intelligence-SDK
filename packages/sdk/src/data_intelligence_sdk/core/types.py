@@ -22,6 +22,7 @@ SUPPORTED_INTENTS: tuple[Intent, ...] = (
 )
 TraceStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 MethodStatus = Literal["draft", "experimental", "stable", "deprecated"]
+UserInputReason = Literal["ambiguous_query", "method_definition"]
 TrustLevel = Literal[
     "builtin",
     "user_approved",
@@ -212,6 +213,34 @@ class EngineOutput:
     evidence: EvidenceBundle | None = None
     trace: EngineTrace = field(default_factory=EngineTrace)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class UserInputOption:
+    id: str
+    label: str
+    description: str | None = None
+    source: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UserInputAnswer:
+    selected_option_id: str | None = None
+    other_text: str | None = None
+
+    def __post_init__(self) -> None:
+        has_option = bool(self.selected_option_id and self.selected_option_id.strip())
+        has_other = bool(self.other_text and self.other_text.strip())
+        if has_option == has_other:
+            raise ValueError("provide exactly one selected option or other text")
+
+
+@dataclass(frozen=True, slots=True)
+class UserInputRequired:
+    question: str
+    reason: UserInputReason
+    options: list[UserInputOption]
+    continuation_state: dict[str, Any]
 
 
 @dataclass(slots=True)
