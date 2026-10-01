@@ -613,7 +613,7 @@ class ModelServiceProfileLLMClient:
     def rerank(
         self,
         query: str,
-        documents: list[dict[str, Any]],
+        documents: list[str],
         *,
         top_n: int | None = None,
         **options: Any,
@@ -710,40 +710,9 @@ class ModelServiceChatModel(BaseChatModel):
             stage="chat.answer",
             **options,
         ):
-            event_type = event.get("type")
-            if event_type == "text.delta":
-                text = event.get("text")
-                if not isinstance(text, str) or not text:
-                    continue
-                chunk = ChatGenerationChunk(message=AIMessageChunk(content=text))
-                if run_manager is not None:
-                    run_manager.on_llm_new_token(text, chunk=chunk)
-                yield chunk
-            elif event_type == "tool_call.delta":
-                tool_call_chunk: dict[str, Any] = {
-                    "args": str(event.get("arguments") or ""),
-                    "type": "tool_call_chunk",
-                }
-                index = event.get("index")
-                if isinstance(index, int) and not isinstance(index, bool):
-                    tool_call_chunk["index"] = index
-                call_id = event.get("call_id")
-                if isinstance(call_id, str) and call_id:
-                    tool_call_chunk["id"] = call_id
-                name = event.get("name")
-                if isinstance(name, str) and name:
-                    tool_call_chunk["name"] = name
-                chunk = ChatGenerationChunk(
-                    message=AIMessageChunk(
-                        content="",
-                        tool_call_chunks=[tool_call_chunk],
-                    )
-                )
-                if run_manager is not None:
-                    run_manager.on_llm_new_token(chunk.text, chunk=chunk)
-                yield chunk
-            elif event_type == "response.failed":
-                code = event.get("code")
+            error = event.get("error")
+            if isinstance(error, dict):
+                code = error.get("code")
                 safe_code = (
                     code
                     if isinstance(code, str)
@@ -751,6 +720,45 @@ class ModelServiceChatModel(BaseChatModel):
                     else "unknown_error"
                 )
                 raise RuntimeError(f"Model Service chat stream failed ({safe_code}).")
+            choices = event.get("choices")
+            choice = choices[0] if isinstance(choices, list) and choices else None
+            delta = choice.get("delta") if isinstance(choice, dict) else None
+            if not isinstance(delta, dict):
+                continue
+            text = delta.get("content")
+            if isinstance(text, str) and text:
+                chunk = ChatGenerationChunk(message=AIMessageChunk(content=text))
+                if run_manager is not None:
+                    run_manager.on_llm_new_token(text, chunk=chunk)
+                yield chunk
+            tool_calls = delta.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for call in tool_calls:
+                    if not isinstance(call, dict):
+                        continue
+                    function = call.get("function")
+                    function = function if isinstance(function, dict) else {}
+                    tool_call_chunk: dict[str, Any] = {
+                        "args": str(function.get("arguments") or ""),
+                        "type": "tool_call_chunk",
+                    }
+                    index = call.get("index")
+                    if isinstance(index, int) and not isinstance(index, bool):
+                        tool_call_chunk["index"] = index
+                    call_id = call.get("id")
+                    if isinstance(call_id, str) and call_id:
+                        tool_call_chunk["id"] = call_id
+                    name = function.get("name")
+                    if isinstance(name, str) and name:
+                        tool_call_chunk["name"] = name
+                    chunk = ChatGenerationChunk(
+                        message=AIMessageChunk(
+                            content="", tool_call_chunks=[tool_call_chunk]
+                        )
+                    )
+                    if run_manager is not None:
+                        run_manager.on_llm_new_token(chunk.text, chunk=chunk)
+                    yield chunk
 
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):
         bound = {

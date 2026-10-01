@@ -63,15 +63,15 @@ class _RecordingProfileClient:
 
     def stream(self, context, resolution_id, **payload):
         self.stream_calls.append((context, resolution_id, payload))
-        yield {"type": "text.delta", "text": "The answer "}
-        yield {"type": "text.delta", "text": "streams."}
-        yield {"type": "response.completed"}
+        yield {"choices": [{"delta": {"content": "The answer "}}]}
+        yield {"choices": [{"delta": {"content": "streams."}}]}
+        yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
 
     def stream_for_model(self, context, model_resource_id, **payload):
         self.stream_for_model_calls.append((context, model_resource_id, payload))
-        yield {"type": "text.delta", "text": "The answer "}
-        yield {"type": "text.delta", "text": "streams."}
-        yield {"type": "response.completed"}
+        yield {"choices": [{"delta": {"content": "The answer "}}]}
+        yield {"choices": [{"delta": {"content": "streams."}}]}
+        yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
 
 
 def _context(*, config_revision: int | None = None) -> ModelRunContext:
@@ -154,18 +154,38 @@ def test_model_service_chat_model_preserves_streamed_tool_call_fragments() -> No
         def stream(self, context, resolution_id, **payload):
             self.stream_calls.append((context, resolution_id, payload))
             yield {
-                "type": "tool_call.delta",
-                "index": 0,
-                "call_id": "call-1",
-                "name": "ask_user",
-                "arguments": '{"question":',
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call-1",
+                                    "function": {
+                                        "name": "ask_user",
+                                        "arguments": '{"question":',
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ],
             }
             yield {
-                "type": "tool_call.delta",
-                "index": 0,
-                "arguments": '"choose"}',
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '"choose"}'},
+                                }
+                            ]
+                        }
+                    }
+                ],
             }
-            yield {"type": "response.completed"}
+            yield {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}
 
     transport = ToolCallProfileClient()
     profile_client = ModelServiceProfileLLMClient(
@@ -195,9 +215,10 @@ def test_model_service_chat_model_surfaces_safe_stream_failure_code() -> None:
     class FailedProfileClient(_RecordingProfileClient):
         def stream(self, context, resolution_id, **payload):
             yield {
-                "type": "response.failed",
-                "code": "provider_http_429",
-                "message": "sensitive upstream response",
+                "error": {
+                    "code": "provider_http_429",
+                    "message": "sensitive upstream response",
+                }
             }
 
     model = ModelServiceChatModel(
